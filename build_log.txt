@@ -1,0 +1,20 @@
+Running Gradle task 'assembleRelease'...                        
+
+FAILURE: Build failed with an exception.
+
+* Where:
+Build file '/home/emerie/Documents/whiteapp/frontend/android/build.gradle.kts' line: 16
+
+* What went wrong:
+A problem occurred configuring project ':app'.
+> [CXX1101] NDK at /home/emerie/Android/Sdk/ndk/27.0.12077973 did not have a source.properties file
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 2s
+Running Gradle task 'assembleRelease'...                            3.4s
+Gradle task assembleRelease failed with exit code 1
