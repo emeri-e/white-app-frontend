@@ -271,19 +271,22 @@ class _HomeTabState extends State<HomeTab> {
               const SizedBox(height: 60),
               
               // Streak Section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  _buildTimeUnit(days, "DAYS"),
-                  _buildSeparator(),
-                  _buildTimeUnit(hours, "HRS"),
-                  _buildSeparator(),
-                  _buildTimeUnit(minutes, "MIN"),
-                  _buildSeparator(),
-                  _buildTimeUnit(seconds, "SEC"),
-                ],
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    _buildTimeUnit(days, "DAYS"),
+                    _buildSeparator(),
+                    _buildTimeUnit(hours, "HRS"),
+                    _buildSeparator(),
+                    _buildTimeUnit(minutes, "MIN"),
+                    _buildSeparator(),
+                    _buildTimeUnit(seconds, "SEC"),
+                  ],
+                ),
               ),
               const SizedBox(height: 20),
               Text(
@@ -378,10 +381,25 @@ class _HomeTabState extends State<HomeTab> {
     final statusType = _dashboardData?['current_status_type'] ?? 'unknown';
     final relapseTrend = _dashboardData?['relapse_trend'] as List<dynamic>? ?? [];
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is OverscrollNotification) {
+          // If overscrolling at the top (dragging down), go to minimal view
+          if (notification.overscroll < 0 && notification.metrics.pixels <= 0) {
+            widget.pageController.animateToPage(
+              0,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+        }
+        return false;
+      },
+      child: SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 30),
 
@@ -555,6 +573,7 @@ class _HomeTabState extends State<HomeTab> {
           const SizedBox(height: 100),
         ],
       ),
+    ),
     );
   }
 
@@ -696,7 +715,7 @@ class RelapseButton extends StatefulWidget {
   State<RelapseButton> createState() => _RelapseButtonState();
 }
 
-class _RelapseButtonState extends State<RelapseButton> with SingleTickerProviderStateMixin {
+class _RelapseButtonState extends State<RelapseButton> {
   bool _isExpanded = false;
   bool _isRecording = false;
   bool _isCancelled = false;
@@ -710,15 +729,15 @@ class _RelapseButtonState extends State<RelapseButton> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat();
+    // _animationController = AnimationController(
+    //   vsync: this,
+    //   duration: const Duration(seconds: 4),
+    // )..repeat();
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    // _animationController.dispose();
     _textController.dispose();
     _audioRecorder.dispose();
     _recordingTimer?.cancel();
@@ -860,9 +879,9 @@ class _RelapseButtonState extends State<RelapseButton> with SingleTickerProvider
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: _handleTap,
-      onLongPressStart: _handleLongPressStart,
-      onLongPressMoveUpdate: _handleLongPressMoveUpdate,
-      onLongPressEnd: _handleLongPressEnd,
+      onLongPressStart: (d) => _handleLongPressStart(d),
+      onLongPressMoveUpdate: (d) => _handleLongPressMoveUpdate(d),
+      onLongPressEnd: (d) => _handleLongPressEnd(d),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
@@ -870,25 +889,23 @@ class _RelapseButtonState extends State<RelapseButton> with SingleTickerProvider
         height: 60,
         decoration: BoxDecoration(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(30),
         ),
         child: Stack(
           alignment: Alignment.center,
           children: [
             // Wavy Background
+            // Static Background
             if (!_isExpanded)
-              AnimatedBuilder(
-                animation: _animationController,
-                builder: (context, child) {
-                  return CustomPaint(
-                    painter: WavyCirclePainter(
-                      animationValue: _animationController.value,
-                      isRecording: _isRecording,
-                      color: _isCancelled ? Colors.grey : Colors.redAccent,
-                    ),
-                    size: const Size(120, 120),
-                  );
-                },
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _isCancelled ? Colors.grey.withOpacity(0.3) : Colors.redAccent.withOpacity(0.3),
+                    width: 2,
+                  ),
+                ),
               ),
 
             // Content
@@ -954,65 +971,6 @@ class _RelapseButtonState extends State<RelapseButton> with SingleTickerProvider
   }
 }
 
-class WavyCirclePainter extends CustomPainter {
-  final double animationValue;
-  final bool isRecording;
-  final Color color;
 
-  WavyCirclePainter({
-    required this.animationValue,
-    required this.isRecording,
-    required this.color,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    // If recording, we want circles to become perfect (amplitude -> 0)
-    // If not recording, we want wavy lines (amplitude > 0)
-    final baseAmplitude = isRecording ? 0.0 : 3.0;
-    
-    // Draw 3 concentric circles
-    for (int i = 0; i < 3; i++) {
-      final radius = 25.0 + (i * 10.0);
-      final opacity = 1.0 - (i * 0.3);
-      paint.color = color.withOpacity(opacity);
-
-      final path = Path();
-      for (double angle = 0; angle <= 2 * math.pi; angle += 0.1) {
-        // Rotate the wave based on animation value
-        final rotationOffset = animationValue * 2 * math.pi;
-        
-        // Calculate wave offset
-        // We use different frequencies for each circle to make it look organic
-        final frequency = 6 + i; 
-        final wave = math.sin(angle * frequency + rotationOffset) * baseAmplitude;
-        
-        final r = radius + wave;
-        final x = center.dx + r * math.cos(angle);
-        final y = center.dy + r * math.sin(angle);
-
-        if (angle == 0) {
-          path.moveTo(x, y);
-        } else {
-          path.lineTo(x, y);
-        }
-      }
-      path.close();
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant WavyCirclePainter oldDelegate) {
-    return oldDelegate.animationValue != animationValue ||
-           oldDelegate.isRecording != isRecording;
-  }
-}
 
 

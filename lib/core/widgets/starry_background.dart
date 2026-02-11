@@ -24,13 +24,13 @@ class _StarryBackgroundState extends State<StarryBackground>
     )..repeat();
 
     // Generate stars
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 70; i++) {
       _stars.add(Star(
         x: _random.nextDouble(),
         y: _random.nextDouble(),
         size: _random.nextDouble() * 2 + 1,
         opacity: _random.nextDouble(),
-        speed: _random.nextDouble() * 0.05 + 0.01,
+        speed: _random.nextDouble() * 0.2 + 0.05, // Increased speed significantly
       ));
     }
   }

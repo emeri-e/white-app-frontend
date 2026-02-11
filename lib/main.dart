@@ -15,10 +15,14 @@ import 'package:whiteapp/features/community/controllers/community_controller.dar
 import 'package:whiteapp/core/services/community_service.dart';
 import 'package:whiteapp/core/services/token_storage.dart';
 import 'package:whiteapp/features/recovery/services/recovery_service.dart';
+import 'firebase_options.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
-  // WidgetsFlutterBinding.ensureInitialized();
-  // await Firebase.initializeApp();
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(
     MultiProvider(
       providers: [
