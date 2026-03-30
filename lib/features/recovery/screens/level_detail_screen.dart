@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
 import 'package:whiteapp/core/widgets/starry_background.dart';
 import 'package:whiteapp/features/recovery/services/recovery_service.dart';
 import 'package:whiteapp/features/recovery/screens/level_exercises_screen.dart';
+import 'package:whiteapp/features/recovery/widgets/media_display_widget.dart';
+import 'package:whiteapp/features/rewards/widgets/badge_earned_dialog.dart';
+import 'package:whiteapp/core/widgets/celebration_dialog.dart';
 
 class LevelDetailScreen extends StatefulWidget {
   static const String id = 'level_detail_screen';
@@ -16,9 +18,8 @@ class LevelDetailScreen extends StatefulWidget {
 
 class _LevelDetailScreenState extends State<LevelDetailScreen> {
   late Future<Map<String, dynamic>> _levelFuture;
-  VideoPlayerController? _videoController;
-  bool _isVideoCompleted = false;
-  int? _currentMediaId;
+  Set<int> _completedMediaIds = {};
+  int _currentMediaIndex = 0;
 
   @override
   void initState() {
@@ -26,46 +27,21 @@ class _LevelDetailScreenState extends State<LevelDetailScreen> {
     _levelFuture = RecoveryService.getLevelDetails(widget.levelId);
   }
 
-  @override
-  void dispose() {
-    _videoController?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _initializeVideo(String url, int mediaId, bool isCompleted) async {
-    if (_videoController != null && _currentMediaId == mediaId) return;
-    
-    _videoController?.dispose();
-    _videoController = VideoPlayerController.networkUrl(Uri.parse(url));
-    _currentMediaId = mediaId;
-    _isVideoCompleted = isCompleted;
-    
-    await _videoController!.initialize();
-    
-    _videoController!.addListener(() {
-      if (_videoController!.value.position >= _videoController!.value.duration && !_isVideoCompleted) {
-        _onVideoComplete();
-      }
-      setState(() {});
-    });
-    
-    setState(() {});
-  }
-
-  void _onVideoComplete() async {
-    if (_isVideoCompleted || _currentMediaId == null) return;
+  void _onMediaComplete(int mediaId) async {
+    if (_completedMediaIds.contains(mediaId)) return;
     
     setState(() {
-      _isVideoCompleted = true;
+      _completedMediaIds.add(mediaId);
     });
 
     try {
-      await RecoveryService.markMediaComplete(_currentMediaId!);
+      await RecoveryService.markMediaComplete(mediaId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Video Completed! You can now proceed."),
+            content: Text("Media Completed!"),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 1),
           ),
         );
       }
@@ -80,44 +56,34 @@ class _LevelDetailScreenState extends State<LevelDetailScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        title: const Text("Level Completed!", style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+      builder: (context) => CelebrationDialog(
+        title: "Level Completed!",
+        message: "Great job! You've completed this level.",
+        buttonText: "Continue",
+        onContinue: () {
+          Navigator.pop(context); // Close dialog
+          Navigator.pop(context); // Go back to level list
+        },
+        extraContent: unlockedChallenge != null ? Column(
           children: [
-            const Icon(Icons.emoji_events, color: Colors.amber, size: 64),
-            const SizedBox(height: 16),
             const Text(
-              "Great job! You've completed this level.",
-              style: TextStyle(color: Colors.white70),
+              "New Challenge Unlocked:",
+              style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              unlockedChallenge['title'],
+              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
-            if (unlockedChallenge != null) ...[
-              const SizedBox(height: 20),
-              const Text(
-                "New Challenge Unlocked:",
-                style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                unlockedChallenge['title'],
-                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ],
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Go back to level list
-            },
-            child: const Text("Continue"),
-          ),
-        ],
+        ) : null,
       ),
-    );
+    ).then((_) {
+      if (result['new_badges'] != null && (result['new_badges'] as List).isNotEmpty) {
+        if (context.mounted) showBadgeEarnedDialog(context, result['new_badges']);
+      }
+    });
   }
 
   @override
@@ -137,7 +103,7 @@ class _LevelDetailScreenState extends State<LevelDetailScreen> {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               } else if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: Colors.white)));
+                return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)));
               } else if (!snapshot.hasData) {
                 return const Center(child: Text('Level not found.', style: TextStyle(color: Colors.white)));
               }
@@ -145,19 +111,26 @@ class _LevelDetailScreenState extends State<LevelDetailScreen> {
               final level = snapshot.data!;
               final mediaList = level['media'] as List<dynamic>? ?? [];
               
-              // Find first video to play
-              final videoMedia = mediaList.firstWhere(
-                (m) => m['media_type'] == 'video',
-                orElse: () => null,
-              );
-
-              if (videoMedia != null && _videoController == null) {
-                _initializeVideo(
-                  videoMedia['url'] ?? videoMedia['file'], 
-                  videoMedia['id'],
-                  videoMedia['is_completed'] ?? false
-                );
+              if (_completedMediaIds.isEmpty) {
+                 for (var media in mediaList) {
+                   if (media['is_completed'] == true) {
+                     _completedMediaIds.add(media['id']);
+                   }
+                 }
               }
+
+              if (mediaList.isEmpty) {
+                 return _buildNoMediaView(level);
+              }
+
+              // Ensure index bounds
+              if (_currentMediaIndex >= mediaList.length) {
+                _currentMediaIndex = mediaList.length - 1;
+              }
+
+              final currentMedia = mediaList[_currentMediaIndex];
+              final isCurrentCompleted = _completedMediaIds.contains(currentMedia['id']) || currentMedia['media_type'] != 'video';
+              final isLastMedia = _currentMediaIndex == mediaList.length - 1;
 
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
@@ -178,99 +151,58 @@ class _LevelDetailScreenState extends State<LevelDetailScreen> {
                     ),
                     const SizedBox(height: 30),
                     
-                    if (_videoController != null && _videoController!.value.isInitialized)
-                      Column(
-                        children: [
-                          AspectRatio(
-                            aspectRatio: _videoController!.value.aspectRatio,
-                            child: Stack(
-                              alignment: Alignment.bottomCenter,
-                              children: [
-                                VideoPlayer(_videoController!),
-                                _ControlsOverlay(controller: _videoController!),
-                                VideoProgressIndicator(_videoController!, allowScrubbing: true),
-                              ],
-                            ),
+                    // Display step indicator
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(mediaList.length, (index) {
+                        return Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _currentMediaIndex == index ? Colors.blueAccent : Colors.white24,
                           ),
-                          const SizedBox(height: 8),
-                          if (_isVideoCompleted)
-                            const Row(
-                              children: [
-                                Icon(Icons.check_circle, color: Colors.green),
-                                SizedBox(width: 8),
-                                Text("Video Watched", style: TextStyle(color: Colors.green)),
-                              ],
-                            ),
-                        ],
-                      )
-                    else if (videoMedia != null)
-                      const Center(child: CircularProgressIndicator())
-                    else
-                      const SizedBox.shrink(),
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 16),
 
-                    // Display other media (PDFs, etc.)
-                    ...mediaList.where((m) => m['media_type'] != 'video').map((media) {
-                      return ListTile(
-                        leading: Icon(
-                          media['media_type'] == 'pdf' ? Icons.picture_as_pdf : Icons.insert_drive_file,
-                          color: Colors.white,
-                        ),
-                        title: Text(media['title'], style: const TextStyle(color: Colors.white)),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.download, color: Colors.white),
-                          onPressed: () {
-                            // TODO: Implement download logic
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text("Download started...")),
-                            );
-                          },
-                        ),
-                      );
-                    }).toList(),
+                    // Display current media
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: MediaDisplayWidget(
+                        key: ValueKey(currentMedia['id']),
+                        media: currentMedia,
+                        onMediaCompleted: _onMediaComplete,
+                      ),
+                    ),
 
                     const SizedBox(height: 30),
                     
-                    // Button to proceed
+                    // Navigation Button
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: _isVideoCompleted ? Colors.blueAccent : Colors.grey,
+                          backgroundColor: isCurrentCompleted ? Colors.blueAccent : Colors.grey,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        onPressed: _isVideoCompleted ? () async {
-                          // Check if there are exercises
-                          try {
-                            final exercises = await RecoveryService.getExercises(widget.levelId);
-                            if (exercises.isNotEmpty) {
-                              if (context.mounted) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => LevelExercisesScreen(levelId: widget.levelId),
-                                  ),
-                                );
-                              }
-                            } else {
-                              // No exercises, mark complete directly
-                              final result = await RecoveryService.markLevelComplete(widget.levelId);
-                              if (context.mounted) {
-                                _showCompletionDialog(context, result);
-                              }
-                            }
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Error: $e")),
-                              );
-                            }
+                        onPressed: isCurrentCompleted ? () async {
+                          if (!isLastMedia) {
+                            setState(() {
+                              _currentMediaIndex++;
+                            });
+                          } else {
+                            // Finish Level or Go to Exercises
+                            _proceedToExercisesOrComplete();
                           }
                         } : null,
                         child: Text(
-                          _isVideoCompleted ? "Continue" : "Watch Video to Continue",
+                          isLastMedia ? "Continue to Exercises" : "Next",
                           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                         ),
                       ),
@@ -284,63 +216,60 @@ class _LevelDetailScreenState extends State<LevelDetailScreen> {
       ),
     );
   }
-}
 
-class _ControlsOverlay extends StatelessWidget {
-  const _ControlsOverlay({required this.controller});
-
-  final VideoPlayerController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: <Widget>[
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 50),
-          reverseDuration: const Duration(milliseconds: 200),
-          child: controller.value.isPlaying
-              ? const SizedBox.shrink()
-              : Container(
-                  color: Colors.black26,
-                  child: const Center(
-                    child: Icon(
-                      Icons.play_arrow,
-                      color: Colors.white,
-                      size: 100.0,
-                      semanticLabel: 'Play',
-                    ),
-                  ),
-                ),
-        ),
-        GestureDetector(
-          onTap: () {
-            controller.value.isPlaying ? controller.pause() : controller.play();
-          },
-        ),
-        Align(
-          alignment: Alignment.topRight,
-          child: PopupMenuButton<double>(
-            initialValue: controller.value.playbackSpeed,
-            tooltip: 'Playback speed',
-            onSelected: (double speed) {
-              controller.setPlaybackSpeed(speed);
-            },
-            itemBuilder: (BuildContext context) {
-              return <PopupMenuItem<double>>[
-                for (final double speed in [0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0])
-                  PopupMenuItem<double>(
-                    value: speed,
-                    child: Text('${speed}x'),
-                  )
-              ];
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              child: Text('${controller.value.playbackSpeed}x', style: const TextStyle(color: Colors.white)),
+  Widget _buildNoMediaView(Map<String, dynamic> level) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              level['title'] ?? 'Untitled Level',
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
             ),
-          ),
-        ),
-      ],
-    );
+            const SizedBox(height: 16),
+            Text(
+              "No media content for this level.",
+              style: const TextStyle(color: Colors.white54),
+            ),
+            const SizedBox(height: 30),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), backgroundColor: Colors.blueAccent),
+                onPressed: _proceedToExercisesOrComplete,
+                child: const Text("Continue to Exercises", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              )
+            )
+          ]
+        )
+      );
+  }
+
+  Future<void> _proceedToExercisesOrComplete() async {
+    try {
+      final exercises = await RecoveryService.getExercises(widget.levelId);
+      if (exercises.isNotEmpty) {
+        if (context.mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => LevelExercisesScreen(levelId: widget.levelId),
+            ),
+          );
+        }
+      } else {
+        final result = await RecoveryService.markLevelComplete(widget.levelId);
+        if (context.mounted) {
+          _showCompletionDialog(context, result);
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    }
   }
 }
+
+

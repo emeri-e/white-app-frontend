@@ -49,6 +49,18 @@ class ApiService {
     return authorizedRequest(url, method: 'GET');
   }
 
+  static Future<http.Response> post(String url, dynamic body) async {
+    return authorizedRequest(url, method: 'POST', body: body);
+  }
+
+  static Future<http.Response> put(String url, dynamic body) async {
+    return authorizedRequest(url, method: 'PUT', body: body);
+  }
+
+  static Future<http.Response> patch(String url, dynamic body) async {
+    return authorizedRequest(url, method: 'PATCH', body: body);
+  }
+
   static Future<http.Response> _makeRequest(
     Uri uri,
     String method,
@@ -60,6 +72,8 @@ class ApiService {
         return await http.post(uri, headers: headers, body: body);
       case 'PUT':
         return await http.put(uri, headers: headers, body: body);
+      case 'PATCH':
+        return await http.patch(uri, headers: headers, body: body);
       case 'DELETE':
         return await http.delete(uri, headers: headers, body: body);
       default:

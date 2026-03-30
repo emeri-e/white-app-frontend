@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:whiteapp/core/widgets/abstract_background.dart';
 import 'package:whiteapp/features/profile/services/profile_service.dart';
@@ -10,11 +11,15 @@ import 'package:whiteapp/features/recovery/screens/level_list_screen.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io';
+import 'dart:convert';
+import 'package:whiteapp/core/services/api_service.dart';
+import 'package:whiteapp/core/constants/env.dart';
 
 import 'package:whiteapp/features/community/screens/community_feed_screen.dart';
 import 'package:whiteapp/features/support_groups/screens/support_group_list_screen.dart';
 import 'package:whiteapp/features/profile/screens/profile_screen.dart';
 import 'package:whiteapp/features/progress/screens/progress_screen.dart';
+import 'package:whiteapp/core/services/notification_service.dart';
 
 import 'package:whiteapp/features/progress/screens/mood_checkin_screen.dart';
 import 'package:whiteapp/features/progress/screens/relapse_log_screen.dart';
@@ -51,6 +56,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _verticalPageController.addListener(_onVerticalScroll);
+    NotificationService.initialize();
   }
 
   @override
@@ -157,6 +163,11 @@ class _HomeTabState extends State<HomeTab> {
   Timer? _timer;
   Duration _cleanDuration = Duration.zero;
 
+  // Pull-down-and-hold state
+  double _pullDownDistance = 0.0;
+  bool _isTransitioning = false;
+  static const double _pullThreshold = 120.0;
+
   @override
   void initState() {
     super.initState();
@@ -187,8 +198,8 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   List<dynamic> _enrollments = [];
-
   Map<String, dynamic>? _dashboardData;
+  Map<String, dynamic>? _dailyContent;
 
   // ... (existing methods)
 
@@ -201,6 +212,16 @@ class _HomeTabState extends State<HomeTab> {
       final enrollments = await RecoveryService.getUserEnrollments();
       final dashboardData = await RecoveryService.getProgressDashboard();
       
+      Map<String, dynamic>? dailyContent;
+      try {
+        final contentRes = await ApiService.get('${Env.apiBase}/recovery/daily-content/');
+        if (contentRes.statusCode == 200) {
+          dailyContent = json.decode(contentRes.body);
+        }
+      } catch (e) {
+        debugPrint("Error loading daily content: $e");
+      }
+      
       if (mounted) {
         setState(() {
           _profile = profile;
@@ -208,6 +229,7 @@ class _HomeTabState extends State<HomeTab> {
           _moodHistory = moodHistory;
           _enrollments = enrollments;
           _dashboardData = dashboardData;
+          _dailyContent = dailyContent;
           if (posts.isNotEmpty) {
             _latestPost = posts.first;
           }
@@ -231,6 +253,7 @@ class _HomeTabState extends State<HomeTab> {
     return PageView(
       controller: widget.pageController,
       scrollDirection: Axis.vertical,
+      physics: const NeverScrollableScrollPhysics(),
       children: [
         _buildMinimalView(),
         _buildDashboardView(),
@@ -244,98 +267,107 @@ class _HomeTabState extends State<HomeTab> {
     final minutes = _cleanDuration.inMinutes % 60;
     final seconds = _cleanDuration.inSeconds % 60;
 
-    return Stack(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Spacer(flex: 2),
-              Text(
-                "Welcome back,",
-                style: GoogleFonts.outfit(
-                  color: Colors.white70, 
-                  fontSize: 22
-                ),
-              ),
-              Text(
-                _profile?.user.username ?? "User",
-                style: GoogleFonts.outfit(
-                  color: Colors.white, 
-                  fontSize: 42, 
-                  fontWeight: FontWeight.bold
-                ),
-              ),
-              const SizedBox(height: 60),
-              
-              // Streak Section
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    _buildTimeUnit(days, "DAYS"),
-                    _buildSeparator(),
-                    _buildTimeUnit(hours, "HRS"),
-                    _buildSeparator(),
-                    _buildTimeUnit(minutes, "MIN"),
-                    _buildSeparator(),
-                    _buildTimeUnit(seconds, "SEC"),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                "CLEAN STREAK",
-                style: GoogleFonts.outfit(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white70,
-                  letterSpacing: 4,
-                ),
-              ),
-              
-              const Spacer(flex: 1),
-              
-              if (_quote != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 40),
-                  child: DailyInspirationCard(
-                    content: _quote!['content'],
-                    author: _quote!['author'],
+    return GestureDetector(
+      onVerticalDragEnd: (details) {
+        // swipe up to go to dashboard
+        if (details.primaryVelocity != null && details.primaryVelocity! < -300) {
+          widget.pageController.animateToPage(
+            1,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOutQuart,
+          );
+        }
+      },
+      child: Stack(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Spacer(flex: 2),
+                Text(
+                  "Welcome back,",
+                  style: GoogleFonts.outfit(
+                      color: Colors.white70,
+                      fontSize: 22
                   ),
                 ),
-                
-              const Spacer(flex: 2),
-            ],
-          ),
-        ),
-        
-        // Relapse Button Positioned to overlap background circles
-        // Assuming background circles are centered or slightly offset
-        // Based on AbstractBackground logic, the target is around height * 0.75
-        // We want to position this button there.
-        Positioned(
-          left: 0,
-          right: 0,
-          top: MediaQuery.of(context).size.height * 0.85 - 30, // Centered on the target Y
-          child: Center(
-            child: RelapseButton(
-              onRelapseLogged: () {
-                _loadData();
-                // Reset timer immediately for visual feedback
-                setState(() {
-                  _cleanDuration = Duration.zero;
-                });
-              },
+                Text(
+                  _profile?.user.username ?? "User",
+                  style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 42,
+                      fontWeight: FontWeight.bold
+                  ),
+                ),
+                const SizedBox(height: 60),
+
+                // Streak Section
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      _buildTimeUnit(days, "DAYS"),
+                      _buildSeparator(),
+                      _buildTimeUnit(hours, "HRS"),
+                      _buildSeparator(),
+                      _buildTimeUnit(minutes, "MIN"),
+                      _buildSeparator(),
+                      _buildTimeUnit(seconds, "SEC"),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  "CLEAN STREAK",
+                  style: GoogleFonts.outfit(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white70,
+                    letterSpacing: 4,
+                  ),
+                ),
+
+                const Spacer(flex: 1),
+
+                if (_quote != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 40),
+                    child: DailyInspirationCard(
+                      content: _quote!['content'],
+                      author: _quote!['author'],
+                    ),
+                  ),
+
+                const Spacer(flex: 2),
+              ],
             ),
           ),
-        ),
-      ],
+
+          // Relapse Button Positioned to overlap background circles
+          Positioned(
+            left: 0,
+            right: 0,
+            top: MediaQuery.of(context).size.height * 0.85 - 30, // Centered on the target Y
+            child: Center(
+              child: RelapseButton(
+                onRelapseLogged: () {
+                  _loadData();
+                  // Reset timer immediately for visual feedback
+                  setState(() {
+                    _cleanDuration = Duration.zero;
+                  });
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -381,199 +413,376 @@ class _HomeTabState extends State<HomeTab> {
     final statusType = _dashboardData?['current_status_type'] ?? 'unknown';
     final relapseTrend = _dashboardData?['relapse_trend'] as List<dynamic>? ?? [];
 
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification is OverscrollNotification) {
-          // If overscrolling at the top (dragging down), go to minimal view
-          if (notification.overscroll < 0 && notification.metrics.pixels <= 0) {
-            widget.pageController.animateToPage(
-              0,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-            );
-          }
-        }
-        return false;
-      },
-      child: SingleChildScrollView(
-        physics: const ClampingScrollPhysics(),
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 30),
+    return Stack(
+      children: [
+        NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            if (notification is UserScrollNotification && 
+                notification.direction == ScrollDirection.idle && 
+                !_isTransitioning) {
+              // User released finger, reset pull distance immediately
+              setState(() {
+                _pullDownDistance = 0;
+              });
+            } else if (notification is ScrollUpdateNotification) {
+              if (notification.metrics.pixels < 0) {
+                setState(() {
+                  _pullDownDistance = -notification.metrics.pixels;
+                });
 
-          // Progress Summary Row
-          Row(
-            children: [
-              Expanded(
-                child: ProgressCard(
-                  title: 'Current Status',
-                  value: statusType == 'level' ? currentStatus.replaceAll('Level ', '') : 'Active',
-                  subtitle: statusType == 'level' ? 'Level' : (statusType == 'challenge' ? 'Challenge' : 'Status'),
-                  icon: statusType == 'challenge' ? Icons.flag : Icons.layers,
+                if (_pullDownDistance >= _pullThreshold && !_isTransitioning) {
+                  _isTransitioning = true;
+                  // Haptic feedback would be good here if available
+                  widget.pageController.animateToPage(
+                    0,
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeOutQuart,
+                  ).then((_) {
+                    setState(() {
+                      _pullDownDistance = 0;
+                      _isTransitioning = false;
+                    });
+                  });
+                }
+              } else if (_pullDownDistance != 0) {
+                setState(() {
+                  _pullDownDistance = 0;
+                });
+              }
+            } else if (notification is ScrollEndNotification) {
+              setState(() {
+                _pullDownDistance = 0;
+              });
+            }
+            return false;
+          },
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 30),
+
+                // Challenges Carousel (Active & Unlocked)
+                if ((_dashboardData?['active_challenges'] as List? ?? []).isNotEmpty || 
+                    (_dashboardData?['available_challenges'] as List? ?? []).isNotEmpty) ...[
+                  SizedBox(
+                    height: 220,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      children: [
+                        ...(_dashboardData?['active_challenges'] as List? ?? []).map((challenge) => SizedBox(
+                          width: MediaQuery.of(context).size.width * 0.85,
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 16),
+                            child: ChallengeCard(
+                              challenge: challenge,
+                              isActive: true,
+                              onTap: () => Navigator.pushNamed(context, ChallengeListScreen.id),
+                            ),
+                          ),
+                        )),
+                        ...(_dashboardData?['available_challenges'] as List? ?? []).map((challenge) => SizedBox(
+                          width: MediaQuery.of(context).size.width * 0.85,
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 16),
+                            child: ChallengeCard(
+                              challenge: challenge,
+                              isActive: false,
+                              onTap: () => Navigator.pushNamed(context, ChallengeListScreen.id),
+                              onActionPressed: () async {
+                                await RecoveryService.startChallenge(challenge['id']);
+                                _loadData();
+                              },
+                            ),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                const SizedBox(height: 16),
+
+                // Progress Summary Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: ProgressCard(
+                        title: 'Current Status',
+                        value: statusType == 'level' ? currentStatus.replaceAll('Level ', '') : 'Active',
+                        subtitle: statusType == 'level' ? 'Level' : (statusType == 'challenge' ? 'Challenge' : 'Status'),
+                        icon: statusType == 'challenge' ? Icons.flag : Icons.layers,
+                        color: Colors.blueAccent,
+                        onTap: () {
+                          // Navigate based on status
+                          if (statusType == 'level' && _enrollments.isNotEmpty) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => LevelListScreen(programId: _enrollments.first['program']),
+                              ),
+                            );
+                          } else if (statusType == 'challenge') {
+                            Navigator.pushNamed(context, ChallengeListScreen.id);
+                          } else {
+                            _navigateToProgress(context);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ProgressCard(
+                        title: 'Streak',
+                        value: '${_profile?.cleanDays ?? 0}',
+                        subtitle: 'Days',
+                        icon: Icons.local_fire_department,
+                        color: Colors.orangeAccent,
+                        onTap: () => _navigateToProgress(context),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ProgressCard(
+                        title: 'Mood',
+                        value: 'Log',
+                        subtitle: 'Check-in',
+                        icon: Icons.mood,
+                        color: Colors.purpleAccent,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const MoodCheckinScreen()),
+                          ).then((_) => setState(() { _loadData(); }));
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ProgressCard(
+                        title: 'Relapses',
+                        value: 'Log',
+                        subtitle: 'Track',
+                        icon: Icons.warning_amber_rounded,
+                        color: Colors.redAccent,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const RelapseLogScreen()),
+                          ).then((_) => setState(() { _loadData(); }));
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+
+                if (relapseTrend.isNotEmpty) ...[
+                  const SizedBox(height: 30),
+                  Text(
+                    'Relapse Trend (Last 7 Days)',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 200,
+                    child: RelapseTrendChart(),
+                  ),
+                ],
+
+                if (_dailyContent != null && (_dailyContent!['content'] as List).isNotEmpty) ...[
+                  const SizedBox(height: 30),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Today\'s Content Planner',
+                        style: GoogleFonts.outfit(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '${_dailyContent!['total_estimated_minutes']} / ${_dailyContent!['daily_limit_minutes']} min',
+                        style: GoogleFonts.outfit(
+                          color: Theme.of(context).primaryColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Render a linear progress bar indicating budget fill capacity
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: LinearProgressIndicator(
+                      value: (_dailyContent!['total_estimated_minutes'] / _dailyContent!['daily_limit_minutes']).clamp(0.0, 1.0),
+                      minHeight: 8,
+                      backgroundColor: Colors.white12,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ...(_dailyContent!['content'] as List).map((media) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: ActionTile(
+                      title: media['title'],
+                      subtitle: "${media['media_type'].toString().toUpperCase()} • ${media['estimated_duration']} MIN",
+                      icon: Icons.play_lesson_rounded,
+                      color: Colors.indigo,
+                      onTap: () {
+                         // Users proceed logically inside their dynamic routing loop.
+                         final programId = _enrollments.isNotEmpty ? _enrollments.first['program'] : null;
+                         if (programId != null) {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => LevelListScreen(programId: programId)));
+                         }
+                      },
+                    ),
+                  )),
+                ],
+
+                if (_latestPost != null) ...[
+                  const SizedBox(height: 30),
+                  CommunityPulseWidget(
+                    title: _latestPost!.authorName,
+                    content: _latestPost!.displayText,
+                    likes: _latestPost!.reactionsCount,
+                    comments: _latestPost!.commentsCount,
+                    onTap: () {
+                      final homeState = context.findAncestorStateOfType<_HomeScreenState>();
+                      if (homeState != null) {
+                        homeState._onItemTapped(1); // Index 1 is Community tab
+                      }
+                    },
+                  ),
+                ],
+                const SizedBox(height: 30),
+
+                // Quick Actions
+                Text(
+                  'Quick Actions',
+                  style: GoogleFonts.outfit(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 24,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ActionTile(
+                  title: 'Continue Learning',
+                  subtitle: _enrollments.isNotEmpty
+                      ? 'Resume ${_enrollments.first['program_title'] ?? 'Program'}'
+                      : 'Start a program',
+                  icon: Icons.play_circle_fill_rounded,
                   color: Colors.blueAccent,
                   onTap: () {
-                     // Navigate based on status
-                     if (statusType == 'level' && _enrollments.isNotEmpty) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => LevelListScreen(programId: _enrollments.first['program']),
-                          ),
-                        );
-                     } else if (statusType == 'challenge') {
-                        Navigator.pushNamed(context, ChallengeListScreen.id);
-                     } else {
-                        _navigateToProgress(context);
-                     }
+                    if (_enrollments.isNotEmpty) {
+                      final programId = _enrollments.first['program'];
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => LevelListScreen(programId: programId),
+                        ),
+                      );
+                    } else {
+                      Navigator.pushNamed(context, ProgramListScreen.id);
+                    }
                   },
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: ProgressCard(
-                  title: 'Streak',
-                  value: '${_profile?.cleanDays ?? 0}',
-                  subtitle: 'Days',
-                  icon: Icons.local_fire_department,
-                  color: Colors.orangeAccent,
-                  onTap: () => _navigateToProgress(context),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: ProgressCard(
-                  title: 'Mood',
-                  value: 'Log',
-                  subtitle: 'Check-in',
-                  icon: Icons.mood,
+                const SizedBox(height: 12),
+                ActionTile(
+                  title: 'Daily Challenge',
+                  subtitle: 'Complete today\'s task',
+                  icon: Icons.check_circle_rounded,
                   color: Colors.purpleAccent,
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const MoodCheckinScreen()),
-                    ).then((_) => setState(() { _loadData(); }));
+                    Navigator.pushNamed(context, ChallengeListScreen.id);
                   },
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: ProgressCard(
-                  title: 'Relapses',
-                  value: 'Log',
-                  subtitle: 'Track',
-                  icon: Icons.warning_amber_rounded,
-                  color: Colors.redAccent,
+
+                const SizedBox(height: 12),
+                ActionTile(
+                  title: 'Self-Assessments',
+                  subtitle: 'Check your mental well-being',
+                  icon: Icons.assignment_turned_in_rounded,
+                  color: Colors.teal,
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const RelapseLogScreen()),
-                    ).then((_) => setState(() { _loadData(); }));
+                      MaterialPageRoute(builder: (_) => const AssessmentListScreen()),
+                    );
                   },
                 ),
-              ),
-            ],
-          ),
-          
-          if (relapseTrend.isNotEmpty) ...[
-            const SizedBox(height: 30),
-            Text(
-              'Relapse Trend (Last 7 Days)',
-              style: GoogleFonts.outfit(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 200,
-              child: RelapseTrendChart(),
-            ),
-          ],
 
-          if (_latestPost != null) ...[
-            const SizedBox(height: 30),
-            CommunityPulseWidget(
-              title: _latestPost!.authorName,
-              content: _latestPost!.displayText,
-              likes: _latestPost!.reactionsCount,
-              comments: _latestPost!.commentsCount,
-              onTap: () {
-                final homeState = context.findAncestorStateOfType<_HomeScreenState>();
-                if (homeState != null) {
-                  homeState._onItemTapped(1); // Index 1 is Community tab
-                }
-              },
-            ),
-          ],
-          const SizedBox(height: 30),
-
-          // Quick Actions
-          Text(
-            'Quick Actions',
-            style: GoogleFonts.outfit(
-              fontWeight: FontWeight.bold,
-              fontSize: 24,
-              color: Colors.white,
+                const SizedBox(height: 100),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          ActionTile(
-            title: 'Continue Learning',
-            subtitle: _enrollments.isNotEmpty 
-                ? 'Resume ${_enrollments.first['program_title'] ?? 'Program'}' 
-                : 'Start a program',
-            icon: Icons.play_circle_fill_rounded,
-            color: Colors.blueAccent,
-            onTap: () {
-              if (_enrollments.isNotEmpty) {
-                final programId = _enrollments.first['program'];
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => LevelListScreen(programId: programId),
+        ),
+
+        // Pull-to-return indicator
+        if (_pullDownDistance > 10)
+          Positioned(
+            top: 20,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Opacity(
+                opacity: (_pullDownDistance / _pullThreshold).clamp(0.0, 1.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: _pullDownDistance >= _pullThreshold
+                          ? Colors.blueAccent
+                          : Colors.white24,
+                    ),
                   ),
-                );
-              } else {
-                Navigator.pushNamed(context, ProgramListScreen.id);
-              }
-            },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _pullDownDistance >= _pullThreshold
+                            ? Icons.check_circle_outline
+                            : Icons.arrow_downward_rounded,
+                        color: _pullDownDistance >= _pullThreshold
+                            ? Colors.blueAccent
+                            : Colors.white,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _pullDownDistance >= _pullThreshold
+                            ? "Release to return"
+                            : "Pull down to return",
+                        style: GoogleFonts.outfit(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
-          const SizedBox(height: 12),
-          ActionTile(
-            title: 'Daily Challenge',
-            subtitle: 'Complete today\'s task',
-            icon: Icons.check_circle_rounded,
-            color: Colors.purpleAccent,
-            onTap: () {
-              Navigator.pushNamed(context, ChallengeListScreen.id);
-            },
-          ),
-          
-          const SizedBox(height: 12),
-          ActionTile(
-            title: 'Self-Assessments',
-            subtitle: 'Check your mental well-being',
-            icon: Icons.assignment_turned_in_rounded,
-            color: Colors.teal,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AssessmentListScreen()),
-              );
-            },
-          ),
-          
-          const SizedBox(height: 100),
-        ],
-      ),
-    ),
+      ],
     );
   }
 

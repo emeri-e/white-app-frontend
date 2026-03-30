@@ -34,8 +34,12 @@ class RecoveryService {
     }
   }
 
-  static Future<List<dynamic>> getChallenges() async {
-    final response = await ApiService.get('$baseUrl/challenges/');
+  static Future<List<dynamic>> getChallenges({String? status}) async {
+    String url = '$baseUrl/challenges/';
+    if (status != null) {
+      url += '?status=$status';
+    }
+    final response = await ApiService.get(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -73,16 +77,50 @@ class RecoveryService {
     }
   }
 
-  static Future<void> markChallengeComplete(int challengeId) async {
+  static Future<Map<String, dynamic>> markChallengeComplete(int challengeId) async {
     final response = await ApiService.authorizedRequest(
       '$baseUrl/challenges/progress/',
       method: 'POST',
       body: {'challenge': challengeId},
     );
-    if (response.statusCode != 201 && response.statusCode != 200) {
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
       throw Exception('Failed to mark challenge complete');
     }
   }
+
+  static Future<Map<String, dynamic>> startChallenge(int challengeId) async {
+    final response = await ApiService.authorizedRequest(
+      '$baseUrl/challenges/progress/',
+      method: 'POST',
+      body: {'challenge': challengeId, 'action': 'start'},
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to start challenge');
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateChallengeTask(int challengeId, dynamic taskId, bool isCompleted) async {
+    final response = await ApiService.authorizedRequest(
+      '$baseUrl/challenges/progress/',
+      method: 'POST',
+      body: {
+        'challenge': challengeId,
+        'action': 'update_task',
+        'task_id': taskId,
+        'is_completed': isCompleted,
+      },
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to update challenge task');
+    }
+  }
+
   static Future<List<dynamic>> getUserEnrollments() async {
     final response = await ApiService.get('$baseUrl/enrollments/');
     if (response.statusCode == 200) {
@@ -131,6 +169,66 @@ class RecoveryService {
       return jsonDecode(response.body);
     } else {
       throw Exception('Failed to submit exercise');
+    }
+  }
+
+  static Future<void> likeMedia(int mediaId) async {
+    final response = await ApiService.authorizedRequest(
+      '$baseUrl/media/$mediaId/like/',
+      method: 'POST',
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('Failed to like media');
+    }
+  }
+
+  static Future<void> unlikeMedia(int mediaId) async {
+    final response = await ApiService.authorizedRequest(
+      '$baseUrl/media/$mediaId/unlike/',
+      method: 'POST',
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to unlike media');
+    }
+  }
+
+  static Future<void> postComment(int mediaId, String content) async {
+    final response = await ApiService.authorizedRequest(
+      '$baseUrl/media/$mediaId/comment/',
+      method: 'POST',
+      body: {'content': content},
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('Failed to post comment');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getComments(int mediaId, {int page = 1}) async {
+    final response = await ApiService.get('$baseUrl/media/$mediaId/comments/?page=$page');
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to load comments');
+    }
+  }
+
+  static Future<void> saveMediaProgress(int mediaId, int lastPositionSeconds) async {
+    final response = await ApiService.authorizedRequest(
+      '$baseUrl/media/$mediaId/progress/',
+      method: 'PATCH',
+      body: {'last_position_seconds': lastPositionSeconds},
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to save media progress');
+    }
+  }
+
+  static Future<String> fetchSubtitles(String url) async {
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      return response.body;
+    } else {
+      throw Exception('Failed to load subtitles');
     }
   }
 }

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:confetti/confetti.dart';
 import 'package:whiteapp/core/widgets/starry_background.dart';
 
 class CelebrationScreen extends StatefulWidget {
@@ -24,18 +23,13 @@ class CelebrationScreen extends StatefulWidget {
 }
 
 class _CelebrationScreenState extends State<CelebrationScreen> {
-  late ConfettiController _controllerCenter;
-
   @override
   void initState() {
     super.initState();
-    _controllerCenter = ConfettiController(duration: const Duration(seconds: 10));
-    _controllerCenter.play();
   }
 
   @override
   void dispose() {
-    _controllerCenter.dispose();
     super.dispose();
   }
 
@@ -43,97 +37,78 @@ class _CelebrationScreenState extends State<CelebrationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: StarryBackground(
-        child: Stack(
-          children: [
-            Align(
-              alignment: Alignment.center,
-              child: ConfettiWidget(
-                confettiController: _controllerCenter,
-                blastDirectionality: BlastDirectionality.explosive,
-                shouldLoop: true,
-                colors: const [
-                  Colors.green,
-                  Colors.blue,
-                  Colors.pink,
-                  Colors.orange,
-                  Colors.purple
-                ],
-              ),
-            ),
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.emoji_events_rounded,
-                      size: 100,
-                      color: Colors.amber,
-                    ),
-                    const SizedBox(height: 32),
-                    Text(
-                      widget.title,
-                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      widget.message,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            color: Colors.white70,
-                          ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 48),
-                    if (widget.gemsEarned != null && widget.gemsEarned! > 0)
-                      _buildRewardTile(
-                        Icons.diamond,
-                        Colors.purple,
-                        '+${widget.gemsEarned} Gems',
-                      ),
-                    if (widget.goldEarned != null && widget.goldEarned! > 0)
-                      _buildRewardTile(
-                        Icons.monetization_on,
-                        Colors.amber,
-                        '+${widget.goldEarned} Gold',
-                      ),
-                    const SizedBox(height: 48),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          if (widget.onContinue != null) {
-                            widget.onContinue!();
-                          } else {
-                            Navigator.pop(context);
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Theme.of(context).primaryColor,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
-                        child: const Text(
-                          'Continue',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.emoji_events_rounded,
+                  size: 100,
+                  color: Colors.amber,
                 ),
-              ),
+                const SizedBox(height: 32),
+                Text(
+                  widget.title,
+                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  widget.message,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: Colors.white70,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 48),
+                if (widget.gemsEarned != null && widget.gemsEarned! > 0)
+                  _buildRewardTile(
+                    Icons.diamond,
+                    Colors.purple,
+                    '+${widget.gemsEarned} Gems',
+                  ),
+                if (widget.goldEarned != null && widget.goldEarned! > 0)
+                  _buildRewardTile(
+                    Icons.monetization_on,
+                    Colors.amber,
+                    '+${widget.goldEarned} Gold',
+                  ),
+                const SizedBox(height: 48),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      if (widget.onContinue != null) {
+                        widget.onContinue!();
+                      } else {
+                        Navigator.pop(context);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Theme.of(context).primaryColor,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    child: const Text(
+                      'Continue',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -166,3 +141,4 @@ class _CelebrationScreenState extends State<CelebrationScreen> {
     );
   }
 }
+

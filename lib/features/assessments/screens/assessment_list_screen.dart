@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:whiteapp/features/assessments/models/assessment.dart';
 import 'package:whiteapp/features/assessments/services/assessment_service.dart';
 import 'package:whiteapp/features/assessments/screens/assessment_detail_screen.dart';
+import 'package:whiteapp/features/assessments/screens/assessment_history_screen.dart';
 import 'package:whiteapp/core/widgets/abstract_background.dart';
 
 class AssessmentListScreen extends StatefulWidget {
@@ -118,7 +119,26 @@ class _AssessmentListScreenState extends State<AssessmentListScreen> {
                             ],
                           ),
                         ),
-                        const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.show_chart, color: Colors.blueAccent),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AssessmentHistoryScreen(
+                                      assessmentId: assessment.id,
+                                      assessmentTitle: assessment.title,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                          ],
+                        ),
                       ],
                     ),
                   ),

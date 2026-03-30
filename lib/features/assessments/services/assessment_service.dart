@@ -40,8 +40,12 @@ class AssessmentService {
     }
   }
   
-  static Future<List<UserAssessmentResult>> getHistory() async {
-    final response = await ApiService.get('$_baseUrl/history/');
+  static Future<List<UserAssessmentResult>> getHistory({int? assessmentId}) async {
+    String url = '$_baseUrl/history/';
+    if (assessmentId != null) {
+      url += '?assessment_id=$assessmentId';
+    }
+    final response = await ApiService.get(url);
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body);
       return data.map((e) => UserAssessmentResult.fromJson(e)).toList();

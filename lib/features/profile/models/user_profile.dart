@@ -10,6 +10,7 @@ class UserProfile {
   final String language;
   final String? cleanDate;
   final int cleanDays;
+  final int streakRecord;
   final int dailyGoal;
   final String? gender;
   final String? countryCode;
@@ -30,6 +31,7 @@ class UserProfile {
     this.language = 'en',
     this.cleanDate,
     this.cleanDays = 0,
+    this.streakRecord = 0,
     this.dailyGoal = 0,
     this.gender,
     this.countryCode,
@@ -52,6 +54,7 @@ class UserProfile {
       language: json['language'] ?? 'en',
       cleanDate: json['clean_date'],
       cleanDays: json['clean_days'] ?? 0,
+      streakRecord: json['streak_record'] ?? 0,
       dailyGoal: json['daily_goal'] ?? 0,
       gender: json['gender'],
       countryCode: json['country_code'],

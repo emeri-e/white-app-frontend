@@ -23,6 +23,15 @@ class RewardsService {
     }
   }
 
+  static Future<List<dynamic>> getMyBadges() async {
+    final response = await ApiService.get('$_baseUrl/my-badges/');
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to load my badges');
+    }
+  }
+
   static Future<Map<String, dynamic>> purchaseBadge(int badgeId) async {
     final response = await ApiService.authorizedRequest(
       '$_baseUrl/badges/$badgeId/purchase/',

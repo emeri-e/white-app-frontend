@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'dart:async';
 
 class ProgressCard extends StatelessWidget {
   final String title;
@@ -340,6 +341,211 @@ class CommunityPulseWidget extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+class ChallengeCard extends StatefulWidget {
+  final Map<String, dynamic> challenge;
+  final bool isActive;
+  final VoidCallback onTap;
+  final VoidCallback? onActionPressed;
+
+  const ChallengeCard({
+    super.key,
+    required this.challenge,
+    this.isActive = true,
+    required this.onTap,
+    this.onActionPressed,
+  });
+
+  @override
+  State<ChallengeCard> createState() => _ChallengeCardState();
+}
+
+class _ChallengeCardState extends State<ChallengeCard> {
+  late Timer? _timer;
+  double _progress = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _progress = (widget.challenge['progress_percentage'] ?? 0.0).toDouble();
+    if (widget.isActive) {
+      _startTimer();
+    } else {
+      _timer = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (widget.challenge['type'] == 'time_based' &&
+          widget.challenge['started_at'] != null &&
+          _progress < 1.0) {
+        final startedAt = DateTime.parse(widget.challenge['started_at']);
+        final durationMinutes = widget.challenge['duration_minutes'] as int;
+        final elapsed = DateTime.now().difference(startedAt).inSeconds;
+        final totalSeconds = durationMinutes * 60;
+        
+        if (mounted) {
+          setState(() {
+            _progress = (elapsed / totalSeconds).clamp(0.0, 1.0);
+          });
+        }
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final restarts = widget.challenge['restarts'] as List? ?? [];
+    final restartCount = restarts.length;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: widget.isActive 
+              ? [const Color(0xFF0EA5E9), const Color(0xFF2563EB)]
+              : [Colors.white.withOpacity(0.1), Colors.white.withOpacity(0.05)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: widget.isActive ? null : Border.all(color: Colors.white10),
+        boxShadow: widget.isActive ? [
+          BoxShadow(
+            color: const Color(0xFF2563EB).withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ] : [],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          widget.isActive ? Icons.bolt_rounded : Icons.lock_open_rounded, 
+                          color: widget.isActive ? Colors.white : Colors.white70, 
+                          size: 24
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.isActive ? "ACTIVE CHALLENGE" : "NEW CHALLENGE AVAILABLE",
+                          style: GoogleFonts.outfit(
+                            color: widget.isActive ? Colors.white : Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (widget.isActive)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          "${(_progress * 100).toStringAsFixed(0)}%",
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  widget.challenge['title'] ?? 'Challenge',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.challenge['description'] ?? '',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white.withOpacity(0.8),
+                    fontSize: 14,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (restartCount > 0) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.refresh_rounded, color: Colors.orangeAccent, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        "Restarted $restartCount time${restartCount > 1 ? 's' : ''}",
+                        style: GoogleFonts.outfit(
+                          color: Colors.orangeAccent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 20),
+                if (widget.isActive)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: LinearProgressIndicator(
+                      value: _progress,
+                      minHeight: 8,
+                      backgroundColor: Colors.white24,
+                      color: Colors.white,
+                    ),
+                  )
+                else
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: widget.onActionPressed,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.blueAccent,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: Text(
+                        "Start Challenge",
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

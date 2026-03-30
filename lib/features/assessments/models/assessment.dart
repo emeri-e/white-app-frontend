@@ -109,12 +109,38 @@ class ScoringRange {
   }
 }
 
+class UserAssessmentSubscaleResult {
+  final int id;
+  final String domain;
+  final double score;
+  final String resultLabel;
+
+  UserAssessmentSubscaleResult({
+    required this.id,
+    required this.domain,
+    required this.score,
+    required this.resultLabel,
+  });
+
+  factory UserAssessmentSubscaleResult.fromJson(Map<String, dynamic> json) {
+    return UserAssessmentSubscaleResult(
+      id: json['id'],
+      domain: json['domain'],
+      score: (json['score'] as num).toDouble(),
+      resultLabel: json['result_label'] ?? '',
+    );
+  }
+}
+
 class UserAssessmentResult {
   final int id;
   final String assessmentTitle;
   final double score;
   final String resultLabel;
   final String completedAt;
+  final List<UserAssessmentResponse>? responses;
+  final List<UserAssessmentSubscaleResult>? subscaleResults;
+  final List<dynamic>? newBadges;
 
   UserAssessmentResult({
     required this.id,
@@ -122,6 +148,9 @@ class UserAssessmentResult {
     required this.score,
     required this.resultLabel,
     required this.completedAt,
+    this.responses,
+    this.subscaleResults,
+    this.newBadges,
   });
 
   factory UserAssessmentResult.fromJson(Map<String, dynamic> json) {
@@ -131,6 +160,42 @@ class UserAssessmentResult {
       score: (json['score'] as num).toDouble(),
       resultLabel: json['result_label'] ?? '',
       completedAt: json['completed_at'],
+      responses: json['responses'] != null
+          ? (json['responses'] as List).map((i) => UserAssessmentResponse.fromJson(i)).toList()
+          : null,
+      subscaleResults: json['subscale_results'] != null
+          ? (json['subscale_results'] as List).map((i) => UserAssessmentSubscaleResult.fromJson(i)).toList()
+          : null,
+      newBadges: json['new_badges'],
+    );
+  }
+}
+
+class UserAssessmentResponse {
+  final int id;
+  final int? questionId;
+  final String questionText;
+  final int? selectedOptionId;
+  final String? optionText;
+  final int? value;
+
+  UserAssessmentResponse({
+    required this.id,
+    this.questionId,
+    required this.questionText,
+    this.selectedOptionId,
+    this.optionText,
+    this.value,
+  });
+
+  factory UserAssessmentResponse.fromJson(Map<String, dynamic> json) {
+    return UserAssessmentResponse(
+      id: json['id'],
+      questionId: json['question'],
+      questionText: json['question_text'] ?? '',
+      selectedOptionId: json['selected_option'],
+      optionText: json['option_text'],
+      value: json['value'],
     );
   }
 }
