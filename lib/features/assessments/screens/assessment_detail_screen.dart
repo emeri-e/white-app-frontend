@@ -38,10 +38,13 @@ class _AssessmentDetailScreenState extends State<AssessmentDetailScreen> {
     try {
       final result = await AssessmentService.submitAssessment(widget.assessmentId, _responses);
       if (mounted) {
-        Navigator.pushReplacement(
+        await Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => AssessmentResultScreen(result: result)),
         );
+        if (mounted) {
+          Navigator.pop(context, true); // Pop back to HomeScreen
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -99,19 +102,35 @@ class _AssessmentDetailScreenState extends State<AssessmentDetailScreen> {
                       ...currentQuestion.options.map((option) {
                         final isSelected = _responses[currentQuestion.id] == option.value;
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 12.0),
+                          padding: const EdgeInsets.only(bottom: 16.0),
                           child: InkWell(
                             onTap: () => _selectOption(currentQuestion.id, option.value, questions.length),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
+                            borderRadius: BorderRadius.circular(16),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                               decoration: BoxDecoration(
-                                color: isSelected ? Theme.of(context).primaryColor.withOpacity(0.1) : Colors.grey[100],
+                                gradient: isSelected ? LinearGradient(
+                                  colors: [Theme.of(context).primaryColor.withValues(alpha: 0.2), Theme.of(context).primaryColor.withValues(alpha: 0.05)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ) : LinearGradient(
+                                  colors: [Colors.white24, Colors.white12],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
                                 border: Border.all(
-                                  color: isSelected ? Theme.of(context).primaryColor : Colors.transparent,
+                                  color: isSelected ? Theme.of(context).primaryColor : Colors.white24,
                                   width: 2,
                                 ),
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: isSelected ? [
+                                  BoxShadow(
+                                    color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  )
+                                ] : [],
                               ),
                               child: Row(
                                 children: [
@@ -119,14 +138,16 @@ class _AssessmentDetailScreenState extends State<AssessmentDetailScreen> {
                                     child: Text(
                                       option.text,
                                       style: GoogleFonts.outfit(
-                                        fontSize: 16,
-                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                        color: isSelected ? Theme.of(context).primaryColor : Colors.black87,
+                                        fontSize: 18,
+                                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                                        color: isSelected ? Theme.of(context).primaryColor : Colors.white,
                                       ),
                                     ),
                                   ),
                                   if (isSelected)
-                                    Icon(Icons.check_circle, color: Theme.of(context).primaryColor),
+                                    Icon(Icons.check_circle_rounded, color: Theme.of(context).primaryColor, size: 28),
+                                  if (!isSelected)
+                                    const Icon(Icons.circle_outlined, color: Colors.white54, size: 28),
                                 ],
                               ),
                             ),

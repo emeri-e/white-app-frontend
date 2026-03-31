@@ -73,4 +73,26 @@ class SupportGroup {
 
   bool get isFree => priceCents == 0;
   String get formattedPrice => isFree ? 'Free' : '$currency ${priceCents / 100}';
+
+  DateTime getNextSessionDate() {
+    final now = DateTime.now();
+    // weeklyDayOfWeek is 0=Mon...6=Sun in backend
+    // Dart DateTime days are 1=Mon...7=Sun
+    final targetDay = weeklyDayOfWeek + 1;
+    
+    // Parse weeklyStartTime "HH:mm:ss" or "HH:mm"
+    final parts = weeklyStartTime.split(':');
+    final hour = int.parse(parts[0]);
+    final minute = int.parse(parts[1]);
+
+    DateTime next = DateTime(now.year, now.month, now.day, hour, minute);
+    
+    // Find next occurrence of targetDay
+    int daysUntil = targetDay - now.weekday;
+    if (daysUntil < 0 || (daysUntil == 0 && now.isAfter(next))) {
+      daysUntil += 7;
+    }
+    
+    return next.add(Duration(days: daysUntil));
+  }
 }

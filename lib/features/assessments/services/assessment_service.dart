@@ -17,6 +17,15 @@ class AssessmentService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getPendingAssessments() async {
+    final response = await ApiService.get('$_baseUrl/pending/');
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(json.decode(response.body));
+    } else {
+      throw Exception('Failed to load pending assessments');
+    }
+  }
+
   static Future<Assessment> getAssessmentDetail(int id) async {
     final response = await ApiService.get('$_baseUrl/$id/');
     if (response.statusCode == 200) {

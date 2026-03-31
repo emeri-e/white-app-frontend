@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:whiteapp/features/support_groups/models/support_group.dart';
 import 'package:whiteapp/features/support_groups/services/support_group_service.dart';
 import 'package:whiteapp/features/support_groups/screens/live_session_screen.dart';
+import 'package:whiteapp/core/widgets/abstract_background.dart';
+import 'dart:ui';
 
 class SupportGroupDetailScreen extends StatefulWidget {
   final int groupId;
@@ -32,19 +35,20 @@ class _SupportGroupDetailScreenState extends State<SupportGroupDetailScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
     }
   }
 
   Future<void> _joinGroup() async {
     setState(() => _isJoining = true);
     try {
-      // For paid groups, we'd need to handle payment flow here
       await SupportGroupService.joinGroup(widget.groupId);
-      await _loadGroup(); // Refresh to update isMember status
+      await _loadGroup();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Joined group successfully!')),
@@ -57,7 +61,7 @@ class _SupportGroupDetailScreenState extends State<SupportGroupDetailScreen> {
         );
       }
     } finally {
-      setState(() => _isJoining = false);
+      if (mounted) setState(() => _isJoining = false);
     }
   }
 
@@ -72,126 +76,102 @@ class _SupportGroupDetailScreenState extends State<SupportGroupDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    if (_error != null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Error')),
-        body: Center(child: Text('Error: $_error')),
-      );
-    }
+    if (_isLoading) return const Scaffold(backgroundColor: Color(0xFF0F172A), body: Center(child: CircularProgressIndicator()));
+    if (_error != null) return Scaffold(backgroundColor: Color(0xFF0F172A), appBar: AppBar(backgroundColor: Colors.transparent), body: Center(child: Text('Error: $_error', style: const TextStyle(color: Colors.white))));
 
     final group = _group!;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(group.title),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header Info
-            Text(
-              group.title,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              group.programName,
-              style: TextStyle(color: Colors.grey[600], fontSize: 16),
-            ),
-            const SizedBox(height: 16),
-
-            // Therapist Info
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundImage: group.therapist['avatar_url'] != null
-                      ? NetworkImage(group.therapist['avatar_url'])
-                      : null,
-                  child: group.therapist['avatar_url'] == null
-                      ? const Icon(Icons.person)
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Column(
+      backgroundColor: const Color(0xFF0F172A),
+      body: AbstractBackground(
+        scrollProgress: 1.0,
+        child: CustomScrollView(
+          slivers: [
+            _buildAppBar(group),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _buildTherapistHeader(group),
+                    const SizedBox(height: 32),
+                    
+                    _buildInfoGrid(group),
+                    const SizedBox(height: 32),
+
+                    _buildSectionHeader('Description'),
                     Text(
-                      group.therapist['name'],
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      group.description,
+                      style: GoogleFonts.outfit(color: Colors.white70, fontSize: 16, height: 1.5),
                     ),
-                    if (group.therapist['bio'] != null)
+                    const SizedBox(height: 24),
+
+                    if (group.goals.isNotEmpty) ...[
+                      _buildSectionHeader('Core Goals'),
                       Text(
-                        group.therapist['bio'],
-                        style: TextStyle(color: Colors.grey[600]),
+                        group.goals,
+                        style: GoogleFonts.outfit(color: Colors.white70, fontSize: 16, height: 1.5),
                       ),
+                      const SizedBox(height: 24),
+                    ],
+
+                    const SizedBox(height: 100), // Space for FAB
                   ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            // Details Grid
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              childAspectRatio: 3,
-              children: [
-                _buildDetailItem(Icons.calendar_today, '${group.sessionCount} Sessions'),
-                _buildDetailItem(Icons.access_time, '${group.weeklyStartTime}'),
-                _buildDetailItem(Icons.attach_money, group.formattedPrice),
-                _buildDetailItem(Icons.people, '${group.availableSeats} seats left'),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            // Description
-            const Text(
-              'About this Group',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(group.description),
-            const SizedBox(height: 16),
-            if (group.goals.isNotEmpty) ...[
-              const Text(
-                'Goals',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 8),
-              Text(group.goals),
-            ],
-            const SizedBox(height: 32),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: _buildActionButton(group),
+    );
+  }
 
-            // Action Button
-            SizedBox(
-              width: double.infinity,
-              child: group.isMember
-                  ? ElevatedButton.icon(
-                      onPressed: _enterSession,
-                      icon: const Icon(Icons.video_call),
-                      label: const Text('Enter Live Session'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: Colors.green,
-                      ),
-                    )
-                  : ElevatedButton(
-                      onPressed: _isJoining || group.availableSeats == 0 ? null : _joinGroup,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: _isJoining
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : Text(group.availableSeats == 0 ? 'Group Full' : 'Join Group'),
-                    ),
+  Widget _buildAppBar(SupportGroup group) {
+    return SliverAppBar(
+      expandedHeight: 220,
+      pinned: true,
+      backgroundColor: const Color(0xFF0F172A),
+      leading: const BackButton(color: Colors.white),
+      flexibleSpace: FlexibleSpaceBar(
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.blueAccent.withOpacity(0.3), const Color(0xFF0F172A)],
+                ),
+              ),
+            ),
+            ClipRRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(color: Colors.black.withOpacity(0.1)),
+              ),
+            ),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(height: 48),
+                  Text(
+                    group.title,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                    child: Text(group.programName, style: GoogleFonts.outfit(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -199,13 +179,125 @@ class _SupportGroupDetailScreenState extends State<SupportGroupDetailScreen> {
     );
   }
 
-  Widget _buildDetailItem(IconData icon, String text) {
-    return Row(
+  Widget _buildTherapistHeader(SupportGroup group) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 30,
+            backgroundColor: Colors.blueAccent.withOpacity(0.1),
+            backgroundImage: group.therapist['avatar_url'] != null ? NetworkImage(group.therapist['avatar_url']) : null,
+            child: group.therapist['avatar_url'] == null ? const Icon(Icons.person_rounded, size: 30, color: Colors.blueAccent) : null,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Hosted by', style: GoogleFonts.outfit(color: Colors.white38, fontSize: 12)),
+                Text(group.therapist['name'], style: GoogleFonts.outfit(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                if (group.therapist['bio'] != null)
+                  Text(group.therapist['bio'], maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.outfit(color: Colors.white54, fontSize: 13)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoGrid(SupportGroup group) {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      childAspectRatio: 2.2,
+      mainAxisSpacing: 16,
+      crossAxisSpacing: 16,
       children: [
-        Icon(icon, size: 20, color: Colors.grey[600]),
-        const SizedBox(width: 8),
-        Text(text),
+        _buildInfoCard(Icons.calendar_month_rounded, 'Sessions', '${group.sessionCount} Classes'),
+        _buildInfoCard(Icons.schedule_rounded, 'Weekly', group.weeklyStartTime),
+        _buildInfoCard(Icons.payments_outlined, 'Price', group.formattedPrice),
+        _buildInfoCard(Icons.people_outline_rounded, 'Seats', '${group.availableSeats} of ${group.capacity}'),
       ],
+    );
+  }
+
+  Widget _buildInfoCard(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: Colors.blueAccent),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: GoogleFonts.outfit(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+                Text(value, style: GoogleFonts.outfit(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        title.toUpperCase(),
+        style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueAccent, letterSpacing: 1.5),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(SupportGroup group) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: SizedBox(
+        width: double.infinity,
+        height: 60,
+        child: group.isMember
+            ? ElevatedButton.icon(
+                onPressed: _enterSession,
+                icon: const Icon(Icons.video_call_rounded),
+                label: Text('Enter Live Session', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blueAccent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  elevation: 8,
+                  shadowColor: Colors.blueAccent.withOpacity(0.3),
+                ),
+              )
+            : ElevatedButton(
+                onPressed: _isJoining || group.availableSeats == 0 ? null : _joinGroup,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white.withOpacity(0.05),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.white.withOpacity(0.1))),
+                  elevation: 0,
+                ),
+                child: _isJoining
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : Text(group.availableSeats == 0 ? 'Group Fully Booked' : 'Join Journey', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+      ),
     );
   }
 }

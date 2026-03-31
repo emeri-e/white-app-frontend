@@ -7,13 +7,13 @@ import 'package:whiteapp/features/assessments/services/assessment_service.dart';
 import 'package:whiteapp/core/widgets/abstract_background.dart';
 
 class AssessmentHistoryScreen extends StatefulWidget {
-  final int assessmentId;
-  final String assessmentTitle;
+  final int? assessmentId;
+  final String? assessmentTitle;
 
   const AssessmentHistoryScreen({
     super.key, 
-    required this.assessmentId, 
-    required this.assessmentTitle
+    this.assessmentId, 
+    this.assessmentTitle
   });
 
   @override
@@ -31,8 +31,12 @@ class _AssessmentHistoryScreenState extends State<AssessmentHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final String title = widget.assessmentTitle != null 
+        ? '${widget.assessmentTitle} Progression' 
+        : 'Assessment History';
+
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.assessmentTitle} Progression', style: GoogleFonts.outfit(fontWeight: FontWeight.bold))),
+      appBar: AppBar(title: Text(title, style: GoogleFonts.outfit(fontWeight: FontWeight.bold))),
       body: AbstractBackground(
         scrollProgress: 1.0,
         child: FutureBuilder<List<UserAssessmentResult>>(
@@ -52,7 +56,7 @@ class _AssessmentHistoryScreenState extends State<AssessmentHistoryScreen> {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                 _buildChart(sortedResults),
+                 if (widget.assessmentId != null) _buildChart(sortedResults),
                  const SizedBox(height: 24),
                  Text('Historical Records', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
                  const SizedBox(height: 12),
@@ -187,7 +191,12 @@ class _AssessmentHistoryScreenState extends State<AssessmentHistoryScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
-        title: Text(result.resultLabel, style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white)),
+        title: Text(
+          widget.assessmentId == null 
+              ? '${result.assessmentTitle}: ${result.resultLabel}' 
+              : result.resultLabel,
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
         subtitle: Text(DateFormat('MMM dd, yyyy - h:mm a').format(date), style: const TextStyle(color: Colors.white70)),
         trailing: Text(result.score.toStringAsFixed(1), style: GoogleFonts.outfit(fontSize: 20, color: Colors.blueAccent, fontWeight: FontWeight.bold)),
       )

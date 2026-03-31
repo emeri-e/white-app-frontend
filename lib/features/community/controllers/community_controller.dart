@@ -16,6 +16,9 @@ class CommunityController extends ChangeNotifier {
   int? _selectedChallengeDay;
   int? _selectedLevelId;
   int? _selectedChallengeId;
+  int? _assignedLevelId;
+  String? _assignedLevelTitle;
+  List<Map<String, dynamic>> _myGroupChallenges = [];
   bool _showOriginalLanguage = false;
 
   List<CommunityPost> get posts => _posts;
@@ -25,6 +28,11 @@ class CommunityController extends ChangeNotifier {
   int? get selectedChallengeDay => _selectedChallengeDay;
   int? get selectedLevelId => _selectedLevelId;
   int? get selectedChallengeId => _selectedChallengeId;
+  int? get assignedLevelId => _assignedLevelId;
+  String? get assignedLevelTitle => _assignedLevelTitle;
+  List<Map<String, dynamic>> get myGroupChallenges => _myGroupChallenges;
+  int? get assignedChallengeId => _myGroupChallenges.isNotEmpty ? _myGroupChallenges.first['id'] : null;
+  String? get primaryChallengeTitle => _myGroupChallenges.isNotEmpty ? _myGroupChallenges.first['title'] : null;
   bool get showOriginalLanguage => _showOriginalLanguage;
 
   List<dynamic> _levels = [];
@@ -33,169 +41,210 @@ class CommunityController extends ChangeNotifier {
   List<dynamic> get levels => _levels;
   List<dynamic> get challenges => _challenges;
 
-  /// Fetch posts for a specific challenge day (or current day)
-  Future<void> fetchPosts({int? challengeDay, int? levelId, int? challengeId}) async {
+  /// Fetch posts with optional filters. If no filters are provided, uses the currently selected ones.
+  Future<void> fetchPosts({int? challengeDay, int? levelId, int? challengeId, bool useDefaults = true}) async {
     _isLoading = true;
     _error = null;
-    _selectedChallengeDay = challengeDay;
-    _selectedLevelId = levelId;
-    _selectedChallengeId = challengeId;
+    
+    // Update internal state if explicit values provided
+    if (challengeDay != null) _selectedChallengeDay = challengeDay;
+    if (levelId != null) {
+      _selectedLevelId = levelId;
+      _selectedChallengeId = null; // Mutual exclusivity
+    }
+    if (challengeId != null) {
+      _selectedChallengeId = challengeId;
+      _selectedLevelId = null; // Mutual exclusivity
+    }
+    
+    // If we want to clear everything (e.g. "All" filter)
+    if (!useDefaults && levelId == null && challengeId == null && challengeDay == null) {
+        _selectedLevelId = null;
+        _selectedChallengeId = null;
+        _selectedChallengeDay = null;
+    }
+
     notifyListeners();
 
     try {
-      _posts = await _communityService.getPosts(
-        challengeDay: challengeDay,
-        levelId: levelId,
-        challengeId: challengeId,
+      final fetchedPosts = await _communityService.getPosts(
+        challengeDay: _selectedChallengeDay,
+        levelId: _selectedLevelId,
+        challengeId: _selectedChallengeId,
       );
-    } catch (e) {
-      _error = e.toString();
-    } finally {
+      _posts = fetchedPosts;
       _isLoading = false;
       notifyListeners();
-    }
-  }
-
-  /// Fetch program details (levels and challenges) for filters
-  Future<void> fetchProgramDetails() async {
-    try {
-      // Get dashboard stats to find active program ID
-      final stats = await ProgressService.getDashboardStats();
-      final programId = stats['active_program_id'];
-      
-      if (programId != null) {
-        _levels = await ProgressService.getLevels(programId);
-        _challenges = await ProgressService.getChallenges(programId);
-        notifyListeners();
-      }
     } catch (e) {
-      print('Error fetching program details: $e');
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      rethrow;
     }
   }
 
-  /// Fetch recovery stories
   Future<void> fetchRecoveryStories() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      _recoveryStories = await _communityService.getRecoveryStories();
-    } catch (e) {
-      _error = e.toString();
-    } finally {
+      final stories = await _communityService.getRecoveryStories();
+      _recoveryStories = stories;
       _isLoading = false;
       notifyListeners();
+    } catch (e) {
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      rethrow;
     }
   }
 
-  /// Create a new post
   Future<bool> createPost(CommunityPost post) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
     try {
-      final newPost = await _communityService.createPost(post);
-      _posts.insert(0, newPost);
+      final response = await _communityService.createPost(post);
+      _posts.insert(0, response);
+      _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
       _error = e.toString();
+      _isLoading = false;
       notifyListeners();
       return false;
     }
   }
 
-  /// Update an existing post
   Future<bool> updatePost(int id, CommunityPost post) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
     try {
-      final updatedPost = await _communityService.updatePost(id, post);
+      final response = await _communityService.updatePost(id, post);
       final index = _posts.indexWhere((p) => p.id == id);
       if (index != -1) {
-        _posts[index] = updatedPost;
-        notifyListeners();
+        _posts[index] = response;
       }
+      _isLoading = false;
+      notifyListeners();
       return true;
     } catch (e) {
       _error = e.toString();
+      _isLoading = false;
       notifyListeners();
       return false;
     }
   }
 
-  /// Delete a post
   Future<bool> deletePost(int id) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
     try {
       await _communityService.deletePost(id);
       _posts.removeWhere((p) => p.id == id);
+      _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
       _error = e.toString();
+      _isLoading = false;
       notifyListeners();
       return false;
     }
   }
 
-  /// Add a comment to a post
-  Future<bool> addComment(PostComment comment) async {
+  Future<void> fetchProgramDetails() async {
     try {
-      await _communityService.addComment(comment);
-      // Refresh posts to get updated comment count
-      await fetchPosts(
-        challengeDay: _selectedChallengeDay,
-        levelId: _selectedLevelId,
-        challengeId: _selectedChallengeId,
-      );
-      return true;
-    } catch (e) {
-      _error = e.toString();
+      final stats = await ProgressService.getDashboardStats();
+      if (stats != null) {
+        final activeProgram = stats['active_program'];
+        if (activeProgram != null) {
+          final programId = activeProgram['id'];
+          final levels = await ProgressService.getLevels(programId);
+          final challenges = await ProgressService.getChallenges(programId);
+          
+          _levels = levels;
+          _challenges = challenges;
+
+          final statusType = stats['current_status_type'];
+          final statusId = stats['current_status_id'];
+          
+          if (statusType == 'level') {
+            _assignedLevelId = statusId;
+            _assignedLevelTitle = stats['current_status'];
+          }
+
+          // Build My Group Challenges list
+          final Map<int, Map<String, dynamic>> challengesMap = {};
+          
+          // 1. If backend says current status is a challenge, add it first (highest priority)
+          if (statusType == 'challenge' && statusId != null) {
+              // We need the title. Let's find it in the challenges list if possible.
+              final challengeData = _challenges.firstWhere((c) => c['id'] == statusId, orElse: () => null);
+              if (challengeData != null) {
+                  challengesMap[statusId] = {'id': statusId, 'title': challengeData['title']};
+              }
+          }
+
+          // 2. Add all active challenges
+          final activeChallenges = stats['active_challenges'] as List? ?? [];
+          for (var c in activeChallenges) {
+              final id = c['id'] as int;
+              if (!challengesMap.containsKey(id)) {
+                  challengesMap[id] = {'id': id, 'title': c['title']};
+              }
+          }
+
+          // 3. Add all available challenges
+          final availableChallenges = stats['available_challenges'] as List? ?? [];
+          for (var c in availableChallenges) {
+              final id = c['id'] as int;
+              if (!challengesMap.containsKey(id)) {
+                  challengesMap[id] = {'id': id, 'title': c['title']};
+              }
+          }
+
+          _myGroupChallenges = challengesMap.values.toList();
+          
+          // Sort myGroupChallenges so "Step" comes first or alphanumeric sort
+          _myGroupChallenges.sort((a, b) {
+              final tA = (a['title'] as String).toLowerCase();
+              final tB = (b['title'] as String).toLowerCase();
+              if (tA.contains('step') && !tB.contains('step')) return -1;
+              if (!tA.contains('step') && tB.contains('step')) return 1;
+              return tA.compareTo(tB);
+          });
+
+          // Set default filter if nothing is selected yet
+          if (_selectedLevelId == null && _selectedChallengeId == null) {
+            _selectedLevelId = _assignedLevelId;
+            _selectedChallengeId = assignedChallengeId;
+          }
+        }
+      }
       notifyListeners();
-      return false;
+    } catch (e) {
+      debugPrint("Error fetching program details: $e");
     }
   }
 
-  /// Report a post or comment
-  Future<bool> reportContent({int? postId, int? commentId, required String reason}) async {
-    try {
-      await _communityService.reportContent(
-        postId: postId,
-        commentId: commentId,
-        reason: reason,
-      );
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// Report translation issue
-  Future<bool> reportTranslation(int postId, String language) async {
-    try {
-      await _communityService.reportTranslation(postId, language);
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// Toggle original language display
-  void toggleOriginalLanguage() {
+  void toggleLanguage() {
     _showOriginalLanguage = !_showOriginalLanguage;
     notifyListeners();
   }
 
-  /// React to a post (like)
-  Future<bool> reactToPost(int postId, String type) async {
+  Future<bool> reactToPost(int postId, String reactionType) async {
     try {
-      await _communityService.reactToPost(postId, type);
-      // Refresh to get updated reaction count
-      await fetchPosts(
-        challengeDay: _selectedChallengeDay,
-        levelId: _selectedLevelId,
-        challengeId: _selectedChallengeId,
-      );
+      await _communityService.reactToPost(postId, reactionType);
+      fetchPosts();
       return true;
     } catch (e) {
       _error = e.toString();
@@ -204,7 +253,28 @@ class CommunityController extends ChangeNotifier {
     }
   }
 
-  /// Get original (untranslated) post content
+  Future<bool> addComment(PostComment comment) async {
+    try {
+      await _communityService.addComment(comment);
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> reportContent({int? postId, int? commentId, required String reason}) async {
+    try {
+      await _communityService.reportContent(postId: postId, commentId: commentId, reason: reason);
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> showOriginal(int postId) async {
     try {
       return await _communityService.showOriginal(postId);
@@ -215,9 +285,14 @@ class CommunityController extends ChangeNotifier {
     }
   }
 
-  /// Clear error
-  void clearError() {
-    _error = null;
-    notifyListeners();
+  Future<bool> reportTranslation(int postId, String language) async {
+    try {
+      await _communityService.reportTranslation(postId, language);
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
   }
 }

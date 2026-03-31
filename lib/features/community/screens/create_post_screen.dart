@@ -59,16 +59,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     // Create post object
     final newPost = CommunityPost(
-      id: 0, // Will be assigned by backend
-      author: 0, // Will be filled by backend
+      id: 0,
+      author: 0,
       authorName: '',
       authorCountryFlag: '',
       visibility: _isAnonymous ? 'anonymous' : 'public',
-      originalLanguage: 'en', // Could detect language
+      originalLanguage: 'en',
       contentText: _contentController.text,
       displayText: _contentController.text,
       isRecoveryStory: _isRecoveryStory,
-      challengeDay: null, // Backend will auto-fill
+      challengeDay: null,
       moderationStatus: 'pending',
       allowComments: _allowComments,
       targetGender: _targetGender,
@@ -83,6 +83,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       translations: [],
       commentsCount: 0,
       reactionsCount: 0,
+      levelId: controller.assignedLevelId,
+      challengeId: controller.assignedChallengeId,
       isTargetedForViewer: false,
     );
 

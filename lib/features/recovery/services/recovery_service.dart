@@ -141,6 +141,17 @@ class RecoveryService {
     }
   }
 
+  static Future<void> switchProgram(int programId) async {
+    final response = await ApiService.authorizedRequest(
+      '$baseUrl/enrollments/switch/',
+      method: 'PATCH',
+      body: {'program_id': programId},
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to switch program');
+    }
+  }
+
   static Future<Map<String, dynamic>> getProgressDashboard() async {
     final response = await ApiService.get('$baseUrl/dashboard/');
     if (response.statusCode == 200) {
@@ -149,6 +160,27 @@ class RecoveryService {
       throw Exception('Failed to load progress dashboard');
     }
   }
+  
+  static Future<Map<String, dynamic>> getDailyLearningSummary() async {
+    final response = await ApiService.get('$baseUrl/daily-learning-summary/');
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to load daily learning summary');
+    }
+  }
+
+  static Future<void> logMediaTime(int mediaId, int seconds) async {
+    final response = await ApiService.authorizedRequest(
+      '$baseUrl/media/$mediaId/log-time/',
+      method: 'POST',
+      body: {'seconds': seconds},
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to log media time');
+    }
+  }
+
   static Future<void> markMediaComplete(int mediaId) async {
     final response = await ApiService.authorizedRequest(
       '$baseUrl/media/$mediaId/complete/',

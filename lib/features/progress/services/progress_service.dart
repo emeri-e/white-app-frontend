@@ -161,4 +161,31 @@ class ProgressService {
       throw Exception('Failed to load programs');
     }
   }
+
+  static Future<Map<String, dynamic>> getProgressSummary() async {
+    final response = await ApiService.get('$_recoveryUrl/progress/summary-7d/');
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to load progress summary');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getCalendarData(int year, int month) async {
+    final response = await ApiService.get('$_recoveryUrl/progress/calendar/?year=$year&month=$month');
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to load calendar data');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getAssessmentGraphs() async {
+    final response = await ApiService.get('${Env.apiBase}/assessments/history-graphs/');
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to load assessment graphs');
+    }
+  }
 }

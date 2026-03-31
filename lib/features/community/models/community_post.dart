@@ -24,6 +24,10 @@ class CommunityPost {
   final List<dynamic> translations;
   final int commentsCount;
   final int reactionsCount;
+  final int? levelId;
+  final int? challengeId;
+  final Map<String, dynamic>? level;
+  final Map<String, dynamic>? challenge;
   final bool isTargetedForViewer;
 
   CommunityPost({
@@ -51,6 +55,10 @@ class CommunityPost {
     required this.translations,
     required this.commentsCount,
     required this.reactionsCount,
+    this.levelId,
+    this.challengeId,
+    this.level,
+    this.challenge,
     required this.isTargetedForViewer,
   });
 
@@ -80,6 +88,10 @@ class CommunityPost {
       translations: json['translations'] as List<dynamic>? ?? [],
       commentsCount: json['comments_count'] as int? ?? 0,
       reactionsCount: json['reactions_count'] as int? ?? 0,
+      levelId: json['level_id'] as int?,
+      challengeId: json['challenge_id'] as int?,
+      level: json['level'] as Map<String, dynamic>?,
+      challenge: json['challenge'] as Map<String, dynamic>?,
       isTargetedForViewer: json['is_targeted_for_viewer'] as bool? ?? false,
     );
   }
@@ -99,6 +111,8 @@ class CommunityPost {
       'target_gender': targetGender,
       'target_country': targetCountry,
       'target_program': targetProgram,
+      'level_id': levelId,
+      'challenge_id': challengeId,
       'country_snapshot': countrySnapshot,
     };
   }

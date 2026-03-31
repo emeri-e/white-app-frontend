@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:whiteapp/features/community/controllers/community_controller.dart';
 import 'package:whiteapp/features/community/models/community_post.dart';
 import 'package:whiteapp/features/community/screens/post_detail_screen.dart';
@@ -22,7 +23,6 @@ class _PostCardState extends State<PostCard> {
     if (_showingOriginal) {
       setState(() => _showingOriginal = false);
     } else {
-      // Fetch original content
       try {
         final original = await Provider.of<CommunityController>(context, listen: false)
             .showOriginal(widget.post.id);
@@ -35,21 +35,6 @@ class _PostCardState extends State<PostCard> {
           SnackBar(content: Text('Failed to load original: $e')),
         );
       }
-    }
-  }
-
-  Future<void> _reportTranslation() async {
-    final controller = Provider.of<CommunityController>(context, listen: false);
-    final success = await controller.reportTranslation(widget.post.id, 'en');
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success
-              ? 'Translation issue reported'
-              : 'Failed to report: ${controller.error}'),
-        ),
-      );
     }
   }
 
@@ -66,9 +51,7 @@ class _PostCardState extends State<PostCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(success
-                ? 'Post reported'
-                : 'Failed to report: ${controller.error}'),
+            content: Text(success ? 'Post reported' : 'Failed to report: ${controller.error}'),
           ),
         );
       }
@@ -79,17 +62,18 @@ class _PostCardState extends State<PostCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Post'),
-        content: const Text('Are you sure you want to delete this post?'),
+        backgroundColor: const Color(0xFF1E293B),
+        title: Text('Delete Post', style: GoogleFonts.outfit(color: Colors.white)),
+        content: Text('Are you sure you want to delete this post?', style: GoogleFonts.outfit(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: GoogleFonts.outfit(color: Colors.white30)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: Text('Delete', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -98,14 +82,9 @@ class _PostCardState extends State<PostCard> {
     if (confirmed == true) {
       final controller = Provider.of<CommunityController>(context, listen: false);
       final success = await controller.deletePost(widget.post.id);
-      
-      if (mounted) {
+      if (mounted && !success) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success
-                ? 'Post deleted'
-                : 'Failed to delete: ${controller.error}'),
-          ),
+          SnackBar(content: Text('Failed to delete: ${controller.error}')),
         );
       }
     }
@@ -124,144 +103,281 @@ class _PostCardState extends State<PostCard> {
     
     final isTranslated = widget.post.originalLanguage != 'en' && !_showingOriginal;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.person)),
-            title: Row(
-              children: [
-                Text(
-                  widget.post.authorName,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                if (widget.post.authorCountryFlag.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    widget.post.authorCountryFlag,
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                ],
-                if (widget.post.isRecoveryStory) ...[
-                  const SizedBox(width: 8),
-                  Chip(
-                    label: const Text('Recovery Story', style: TextStyle(fontSize: 10)),
-                    backgroundColor: Colors.green.shade100,
-                    padding: EdgeInsets.zero,
-                    labelPadding: const EdgeInsets.symmetric(horizontal: 6),
-                  ),
-                ],
-              ],
-            ),
-            subtitle: Text(timeago.format(widget.post.createdAt)),
-            trailing: PopupMenuButton(
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'report',
-                  child: Row(
-                    children: [Icon(Icons.flag), SizedBox(width: 8), Text('Report')],
-                  ),
-                ),
-                // TODO: Add edit/delete for author
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete, color: Colors.red),
-                      SizedBox(width: 8),
-                      Text('Delete', style: TextStyle(color: Colors.red)),
-                    ],
-                  ),
-                ),
-              ],
-              onSelected: (value) {
-                if (value == 'report') _reportPost();
-                if (value == 'delete') _deletePost();
-              },
-            ),
-          ),
-
-          // Targeting Notice
-          if (widget.post.isTargetedForViewer)
-            Container(
-              width: double.infinity,
-              color: Colors.orange.shade100,
-              padding: const EdgeInsets.all(12),
-              child: const Row(
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
                 children: [
-                  Icon(Icons.info_outline, color: Colors.orange),
-                  SizedBox(width: 8),
+                  _buildAvatar(),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      'This post is targeted to a specific group inside the app.',
-                      style: TextStyle(color: Colors.orange),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              widget.post.authorName,
+                              style: GoogleFonts.outfit(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            if (widget.post.authorCountryFlag.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Text(widget.post.authorCountryFlag, style: const TextStyle(fontSize: 14)),
+                            ],
+                          ],
+                        ),
+                        Text(
+                          timeago.format(widget.post.createdAt),
+                          style: GoogleFonts.outfit(color: Colors.white30, fontSize: 12),
+                        ),
+                      ],
                     ),
                   ),
+                  _buildMenuButton(),
                 ],
               ),
             ),
 
-          // Content
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              displayText,
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
+            // Target/Context Badges
+            _buildContextBadges(),
 
-          // Translation controls
-          if (isTranslated)
+            // Content
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Wrap(
-                spacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _toggleOriginalLanguage,
-                    icon: const Icon(Icons.translate, size: 16),
-                    label: const Text('Show Original'),
-                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4)),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _reportTranslation,
-                    icon: const Icon(Icons.report_problem, size: 16),
-                    label: const Text('Report Translation'),
-                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4)),
-                  ),
-                ],
+              child: Text(
+                displayText,
+                style: GoogleFonts.outfit(
+                  color: Colors.white.withOpacity(0.9),
+                  fontSize: 15,
+                  height: 1.5,
+                ),
               ),
             ),
 
-          // Actions
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              children: [
-                TextButton.icon(
-                  onPressed: _likePost,
-                  icon: const Icon(Icons.favorite_border),
-                  label: Text('${widget.post.reactionsCount}'),
+            // Translations
+            if (isTranslated) _buildTranslationControls(),
+
+            // Media (Placeholder for now, can be expanded)
+            if (widget.post.media.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Container(
+                  height: 200,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Center(child: Icon(Icons.image, color: Colors.white24, size: 48)),
                 ),
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PostDetailScreen(post: widget.post),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.comment),
-                  label: Text('${widget.post.commentsCount}'),
-                ),
-              ],
-            ),
+              ),
+
+            const SizedBox(height: 12),
+
+            // Action Bar
+            _buildActionBar(),
+            
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar() {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blueAccent.withOpacity(0.2), Colors.purpleAccent.withOpacity(0.2)],
+        ),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Center(
+        child: Text(
+          widget.post.authorName.isNotEmpty ? widget.post.authorName[0].toUpperCase() : '?',
+          style: GoogleFonts.outfit(color: Colors.blueAccent, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuButton() {
+    return PopupMenuButton(
+      icon: const Icon(Icons.more_vert_rounded, color: Colors.white30),
+      color: const Color(0xFF1E293B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'report',
+          child: Row(
+            children: [
+              const Icon(Icons.flag_rounded, color: Colors.white70, size: 20),
+              const SizedBox(width: 12),
+              Text('Report', style: GoogleFonts.outfit(color: Colors.white70)),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+              const SizedBox(width: 12),
+              Text('Delete', style: GoogleFonts.outfit(color: Colors.redAccent)),
+            ],
+          ),
+        ),
+      ],
+      onSelected: (value) {
+        if (value == 'report') _reportPost();
+        if (value == 'delete') _deletePost();
+      },
+    );
+  }
+
+  Widget _buildContextBadges() {
+    final List<Widget> badges = [];
+
+    if (widget.post.isRecoveryStory) {
+      badges.add(_buildBadge("Recovery Story", Colors.greenAccent));
+    }
+
+    if (widget.post.level != null) {
+      badges.add(_buildBadge("Level ${widget.post.level!['order']}", Colors.blueAccent));
+    }
+
+    if (widget.post.challenge != null) {
+      badges.add(_buildBadge(widget.post.challenge!['title'], Colors.orangeAccent));
+    }
+
+    if (badges.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Wrap(spacing: 8, runSpacing: 8, children: badges),
+    );
+  }
+
+  Widget _buildBadge(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.outfit(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildTranslationControls() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          _buildTextButton(
+            onPressed: _toggleOriginalLanguage,
+            icon: Icons.translate_rounded,
+            label: "Show Original",
+            color: Colors.blueAccent,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActionBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          _buildActionButton(
+            onPressed: _likePost,
+            icon: Icons.favorite_rounded,
+            activeIcon: Icons.favorite_rounded,
+            label: "${widget.post.reactionsCount}",
+            color: Colors.redAccent,
+            isActive: false, // TODO: Check if user liked
+          ),
+          const SizedBox(width: 4),
+          _buildActionButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => PostDetailScreen(post: widget.post)),
+              );
+            },
+            icon: Icons.chat_bubble_outline_rounded,
+            label: "${widget.post.commentsCount}",
+            color: Colors.blueAccent,
+          ),
+          const Spacer(),
+          IconButton(
+            onPressed: () {}, // TODO: Share functionality
+            icon: const Icon(Icons.share_rounded, color: Colors.white30, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required VoidCallback onPressed,
+    required IconData icon,
+    IconData? activeIcon,
+    required String label,
+    required Color color,
+    bool isActive = false,
+  }) {
+    final currentColor = isActive ? color : Colors.white30;
+    return TextButton.icon(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: currentColor,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      icon: Icon(isActive ? (activeIcon ?? icon) : icon, size: 20, color: currentColor),
+      label: Text(label, style: GoogleFonts.outfit(color: Colors.white54, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildTextButton({required VoidCallback onPressed, required IconData icon, required String label, required Color color}) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(label, style: GoogleFonts.outfit(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+          ],
+        ),
       ),
     );
   }
@@ -284,23 +400,29 @@ class _ReportDialogState extends State<_ReportDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Report Post'),
+      backgroundColor: const Color(0xFF1E293B),
+      title: Text('Report Post', style: GoogleFonts.outfit(color: Colors.white)),
       content: TextField(
         controller: _controller,
-        decoration: const InputDecoration(
+        style: GoogleFonts.outfit(color: Colors.white),
+        decoration: InputDecoration(
           labelText: 'Reason',
+          labelStyle: GoogleFonts.outfit(color: Colors.white30),
           hintText: 'Why are you reporting this post?',
+          hintStyle: GoogleFonts.outfit(color: Colors.white10),
+          enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white10)),
+          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
         ),
         maxLines: 3,
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text('Cancel', style: GoogleFonts.outfit(color: Colors.white30)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, _controller.text),
-          child: const Text('Report'),
+          child: Text('Report', style: GoogleFonts.outfit(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
         ),
       ],
     );

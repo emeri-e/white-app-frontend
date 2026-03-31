@@ -165,6 +165,10 @@ class _MediaDisplayWidgetState extends State<MediaDisplayWidget> {
     _progressTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (_videoController != null && _videoController!.value.isPlaying) {
         _saveCurrentPosition();
+        // Log 10 seconds of actual watch time to the backend
+        RecoveryService.logMediaTime(widget.media['id'], 10).catchError((e) {
+            // fail silently on background ping
+        });
       }
     });
   }
