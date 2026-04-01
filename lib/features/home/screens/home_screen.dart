@@ -44,6 +44,7 @@ import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:whiteapp/features/home/widgets/support_group_session_widget.dart';
 
 class HomeScreen extends StatefulWidget {
   static const String id = 'home_screen';
@@ -168,6 +169,7 @@ class _HomeTabState extends State<HomeTab> {
   List<MoodEntry> _moodHistory = [];
   CommunityPost? _latestPost;
   SupportGroup? _upcomingSessionGroup;
+  dynamic _currentSession;
   bool _isLoading = true;
   bool _hasShownAssessmentPrompt = false;
   final CommunityService _communityService = CommunityService();
@@ -223,6 +225,13 @@ class _HomeTabState extends State<HomeTab> {
       final enrollments = await RecoveryService.getUserEnrollments();
       final dashboardData = await RecoveryService.getProgressDashboard();
       
+      Map<String, dynamic>? currentSession;
+      try {
+        currentSession = await SupportGroupService.getCurrentSession();
+      } catch (e) {
+        debugPrint("Error loading current session: $e");
+      }
+
       SupportGroup? upcomingSession;
       try {
         final groups = await SupportGroupService.getGroups();
@@ -260,6 +269,7 @@ class _HomeTabState extends State<HomeTab> {
           _dashboardData = dashboardData;
           _dailyContent = dailyContent;
           _upcomingSessionGroup = upcomingSession;
+          _currentSession = currentSession;
           
           // Determine current group for pulse
           final statusType = _dashboardData?['current_status_type'];
@@ -600,8 +610,11 @@ class _HomeTabState extends State<HomeTab> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                 ],
+
+                if (_currentSession != null)
+                  SupportGroupSessionWidget(session: _currentSession!),
 
                 const SizedBox(height: 16),
 

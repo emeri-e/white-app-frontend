@@ -24,7 +24,12 @@ class _RelapseTrendChartState extends State<RelapseTrendChart> {
 
   Future<void> _fetchData() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    
+    // Only show loading indicator if we don't have data yet
+    if (_spots.isEmpty) {
+      setState(() => _isLoading = true);
+    }
+
     try {
       final data = await ProgressService.getRelapseTrend(_selectedRange);
       final spots = <FlSpot>[];
@@ -54,14 +59,7 @@ class _RelapseTrendChartState extends State<RelapseTrendChart> {
 
   @override
   Widget build(BuildContext context) {
-    return VisibilityDetector(
-      key: Key('relapse-trend-${_selectedRange}'),
-      onVisibilityChanged: (info) {
-        if (info.visibleFraction > 0.5) {
-          _fetchData();
-        }
-      },
-      child: Container(
+    return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.05),
@@ -136,8 +134,7 @@ class _RelapseTrendChartState extends State<RelapseTrendChart> {
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildRangeButton(String range) {

@@ -9,6 +9,7 @@ import 'package:whiteapp/features/auth/screens/login_screen.dart';
 import 'package:whiteapp/core/widgets/abstract_background.dart';
 import 'package:whiteapp/features/profile/screens/notification_preferences_screen.dart';
 import 'package:whiteapp/features/profile/screens/offline_downloads_screen.dart';
+import 'package:whiteapp/features/feedback/screens/feedback_screen.dart';
 import 'dart:ui';
 
 class ProfileScreen extends StatefulWidget {
@@ -337,6 +338,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               icon: Icons.security_outlined,
                               title: 'Privacy & Security',
                               onTap: () {}, // TODO
+                            ),
+                            const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(color: Colors.white24, height: 1)),
+                            _buildSettingsTile(
+                              icon: Icons.feedback_outlined,
+                              title: 'Share Feedback',
+                              onTap: () => Navigator.pushNamed(context, FeedbackScreen.id),
                             ),
                           ],
                         ),

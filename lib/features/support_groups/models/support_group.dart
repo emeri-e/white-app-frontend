@@ -20,6 +20,8 @@ class SupportGroup {
   final Map<String, dynamic> therapist;
   final bool isMember;
   final bool timelineEnabled;
+  final String meetingProvider;
+  final String? meetingLink;
 
   SupportGroup({
     required this.id,
@@ -43,6 +45,8 @@ class SupportGroup {
     required this.therapist,
     this.isMember = false,
     this.timelineEnabled = true,
+    this.meetingProvider = 'livekit',
+    this.meetingLink,
   });
 
   factory SupportGroup.fromJson(Map<String, dynamic> json) {
@@ -68,6 +72,8 @@ class SupportGroup {
       therapist: json['therapist'] ?? {},
       isMember: json['is_member'] ?? false,
       timelineEnabled: json['timeline_enabled'] ?? true,
+      meetingProvider: json['meeting_provider'] ?? 'livekit',
+      meetingLink: json['meeting_link'],
     );
   }
 

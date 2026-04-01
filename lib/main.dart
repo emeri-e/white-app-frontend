@@ -9,6 +9,7 @@ import 'package:whiteapp/features/recovery/screens/program_list_screen.dart';
 import 'package:whiteapp/features/recovery/screens/challenge_list_screen.dart';
 import 'package:whiteapp/features/recovery/screens/progress_dashboard_screen.dart';
 import 'package:whiteapp/features/onboarding/screens/walkthrough_screen.dart';
+import 'package:whiteapp/features/feedback/screens/feedback_screen.dart';
 
 import 'package:provider/provider.dart';
 import 'package:whiteapp/features/community/controllers/community_controller.dart';
@@ -93,6 +94,7 @@ class MyApp extends StatelessWidget {
         ChallengeListScreen.id: (context) => const ChallengeListScreen(),
         ProgressDashboardScreen.id: (context) => const ProgressDashboardScreen(),
         WalkthroughScreen.id: (context) => const WalkthroughScreen(),
+        FeedbackScreen.id: (context) => const FeedbackScreen(),
       },
     );
   }

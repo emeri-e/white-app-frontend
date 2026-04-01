@@ -99,9 +99,20 @@ class SupportGroupService {
       method: 'POST',
       body: {'type': type},
     );
-    
     if (response.statusCode != 200 && response.statusCode != 201) {
       throw Exception('Failed to react to post: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getCurrentSession() async {
+    final response = await ApiService.authorizedRequest('$_baseUrl/current-session/');
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data == null) return null;
+      return data as Map<String, dynamic>;
+    } else {
+      throw Exception('Failed to load current session: ${response.body}');
     }
   }
 }

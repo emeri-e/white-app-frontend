@@ -5,6 +5,7 @@ import 'package:whiteapp/features/support_groups/services/support_group_service.
 import 'package:whiteapp/features/support_groups/screens/live_session_screen.dart';
 import 'package:whiteapp/core/widgets/abstract_background.dart';
 import 'dart:ui';
+import 'package:url_launcher/url_launcher.dart';
 
 class SupportGroupDetailScreen extends StatefulWidget {
   final int groupId;
@@ -20,6 +21,7 @@ class _SupportGroupDetailScreenState extends State<SupportGroupDetailScreen> {
   bool _isLoading = true;
   String? _error;
   bool _isJoining = false;
+  bool _isEntering = false;
 
   @override
   void initState() {
@@ -65,13 +67,38 @@ class _SupportGroupDetailScreenState extends State<SupportGroupDetailScreen> {
     }
   }
 
-  void _enterSession() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => LiveSessionScreen(group: _group!),
-      ),
-    );
+  void _enterSession() async {
+    setState(() => _isEntering = true);
+    try {
+      if (_group?.meetingProvider != 'livekit') {
+        final tokenData = await SupportGroupService.getLiveKitToken(widget.groupId);
+        final link = tokenData['meeting_link'];
+        if (link != null && link.isNotEmpty) {
+          final url = Uri.parse(link);
+          if (await canLaunchUrl(url)) {
+            await launchUrl(url, mode: LaunchMode.externalApplication);
+          } else {
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not launch meeting link')));
+          }
+        } else {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No meeting link available')));
+        }
+        return;
+      }
+
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => LiveSessionScreen(group: _group!),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      if (mounted) setState(() => _isEntering = false);
+    }
   }
 
   @override
@@ -273,10 +300,8 @@ class _SupportGroupDetailScreenState extends State<SupportGroupDetailScreen> {
         width: double.infinity,
         height: 60,
         child: group.isMember
-            ? ElevatedButton.icon(
-                onPressed: _enterSession,
-                icon: const Icon(Icons.video_call_rounded),
-                label: Text('Enter Live Session', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16)),
+            ? ElevatedButton(
+                onPressed: _isEntering ? null : _enterSession,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blueAccent,
                   foregroundColor: Colors.white,
@@ -284,6 +309,16 @@ class _SupportGroupDetailScreenState extends State<SupportGroupDetailScreen> {
                   elevation: 8,
                   shadowColor: Colors.blueAccent.withOpacity(0.3),
                 ),
+                child: _isEntering 
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.video_call_rounded),
+                        const SizedBox(width: 8),
+                        Text('Enter Live Session', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
               )
             : ElevatedButton(
                 onPressed: _isJoining || group.availableSeats == 0 ? null : _joinGroup,
