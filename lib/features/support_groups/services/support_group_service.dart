@@ -6,12 +6,17 @@ import 'package:whiteapp/features/support_groups/models/support_group.dart';
 class SupportGroupService {
   static const String _baseUrl = '${Env.apiBase}/support-groups';
 
+  static List<SupportGroup>? cachedGroups;
+  static Map<String, dynamic>? cachedCurrentSession;
+  static List<dynamic>? cachedPosts;
+
   static Future<List<SupportGroup>> getGroups() async {
     final response = await ApiService.authorizedRequest(_baseUrl);
     
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body);
-      return data.map((json) => SupportGroup.fromJson(json)).toList();
+      cachedGroups = data.map((json) => SupportGroup.fromJson(json)).toList();
+      return cachedGroups!;
     } else {
       throw Exception('Failed to load support groups: ${response.body}');
     }
@@ -104,13 +109,18 @@ class SupportGroupService {
     }
   }
 
+
   static Future<Map<String, dynamic>?> getCurrentSession() async {
     final response = await ApiService.authorizedRequest('$_baseUrl/current-session/');
     
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      if (data == null) return null;
-      return data as Map<String, dynamic>;
+      if (data == null) {
+        cachedCurrentSession = null;
+        return null;
+      }
+      cachedCurrentSession = data as Map<String, dynamic>;
+      return cachedCurrentSession;
     } else {
       throw Exception('Failed to load current session: ${response.body}');
     }

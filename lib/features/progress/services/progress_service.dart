@@ -21,11 +21,14 @@ class ProgressService {
     }
   }
 
+  static List<MoodEntry>? cachedMoodHistory;
+
   static Future<List<MoodEntry>> getMoodHistory() async {
     final response = await ApiService.get('$_emotionsUrl/');
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body);
-      return data.map((e) => MoodEntry.fromJson(e)).toList();
+      cachedMoodHistory = data.map((e) => MoodEntry.fromJson(e)).toList();
+      return cachedMoodHistory!;
     } else {
       throw Exception('Failed to load mood history');
     }

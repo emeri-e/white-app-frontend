@@ -53,23 +53,23 @@ class UserProfile {
       timezone: json['timezone'] ?? 'UTC',
       language: json['language'] ?? 'en',
       cleanDate: json['clean_date'],
-      cleanDays: json['clean_days'] ?? 0,
-      streakRecord: json['streak_record'] ?? 0,
-      dailyGoal: json['daily_goal'] ?? 0,
+      cleanDays: json['clean_days'] != null ? (json['clean_days'] as num).toInt() : 0,
+      streakRecord: json['streak_record'] != null ? (json['streak_record'] as num).toInt() : 0,
+      dailyGoal: json['daily_goal'] != null ? (json['daily_goal'] as num).toInt() : 0,
       gender: json['gender'],
       countryCode: json['country_code'],
       disableAutoTranslation: json['disable_auto_translation'] ?? false,
       viewAllCountries: json['view_all_countries'] ?? true,
-      currentChallengeDay: json['current_challenge_day'],
-      gold: json['gold'] ?? 0,
-      gems: json['gems'] ?? 0,
-      trophies: json['trophies'] ?? 0,
+      currentChallengeDay: json['current_challenge_day'] != null ? (json['current_challenge_day'] as num).toInt() : null,
+      gold: json['gold'] != null ? (json['gold'] as num).toInt() : 0,
+      gems: json['gems'] != null ? (json['gems'] as num).toInt() : 0,
+      trophies: json['trophies'] != null ? (json['trophies'] as num).toInt() : 0,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      // 'user': user.toJson(), // Typically read-only from profile endpoint
+      'user': user.toJson(),
       'bio': bio,
       'avatar': avatar,
       'location': location,

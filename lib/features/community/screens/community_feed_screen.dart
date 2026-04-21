@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:whiteapp/features/community/controllers/community_controller.dart';
 import 'package:whiteapp/features/community/widgets/post_card.dart';
 import 'package:whiteapp/features/community/screens/create_post_screen.dart';
+import 'package:whiteapp/features/community/screens/moderation_queue_screen.dart';
+import 'package:whiteapp/features/profile/services/profile_service.dart';
 
 class CommunityFeedScreen extends StatefulWidget {
   const CommunityFeedScreen({Key? key}) : super(key: key);
@@ -64,6 +66,17 @@ class _CommunityFeedScreenState extends State<CommunityFeedScreen> with SingleTi
                 icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
                 onPressed: _loadData,
               ),
+              if (ProfileService.cachedProfile?.user.isStaff ?? false)
+                IconButton(
+                  icon: const Icon(Icons.admin_panel_settings_rounded, color: Colors.orangeAccent),
+                  tooltip: 'Moderation Queue',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ModerationQueueScreen()),
+                    ).then((_) => _loadData());
+                  },
+                ),
               const SizedBox(width: 8),
             ],
             bottom: PreferredSize(

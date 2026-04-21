@@ -62,9 +62,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
         },
         child: AbstractBackground(
           scrollProgress: 1.0,
-          child: _isLoading 
-              ? const Center(child: CircularProgressIndicator(color: Colors.blueAccent))
-              : RefreshIndicator(
+          child: RefreshIndicator(
                   onRefresh: _loadAllData,
                   color: Colors.blueAccent,
                   child: CustomScrollView(

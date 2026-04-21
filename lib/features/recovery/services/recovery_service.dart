@@ -7,10 +7,13 @@ import 'package:whiteapp/core/constants/env.dart';
 class RecoveryService {
   static const String baseUrl = '${Env.apiBase}/recovery';
 
+  static Map<String, dynamic>? cachedQuote;
+
   static Future<Map<String, dynamic>> getDailyQuote() async {
     final response = await ApiService.get('$baseUrl/quote/');
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      cachedQuote = jsonDecode(response.body);
+      return cachedQuote!;
     } else {
       throw Exception('Failed to load quote');
     }
@@ -121,10 +124,13 @@ class RecoveryService {
     }
   }
 
+  static List<dynamic>? cachedEnrollments;
+
   static Future<List<dynamic>> getUserEnrollments() async {
     final response = await ApiService.get('$baseUrl/enrollments/');
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      cachedEnrollments = jsonDecode(response.body);
+      return cachedEnrollments!;
     } else {
       throw Exception('Failed to load enrollments');
     }
@@ -152,19 +158,25 @@ class RecoveryService {
     }
   }
 
+  static Map<String, dynamic>? cachedDashboardData;
+
   static Future<Map<String, dynamic>> getProgressDashboard() async {
     final response = await ApiService.get('$baseUrl/dashboard/');
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      cachedDashboardData = jsonDecode(response.body);
+      return cachedDashboardData!;
     } else {
       throw Exception('Failed to load progress dashboard');
     }
   }
   
+  static Map<String, dynamic>? cachedDailyLearningSummary;
+
   static Future<Map<String, dynamic>> getDailyLearningSummary() async {
     final response = await ApiService.get('$baseUrl/daily-learning-summary/');
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      cachedDailyLearningSummary = jsonDecode(response.body);
+      return cachedDailyLearningSummary!;
     } else {
       throw Exception('Failed to load daily learning summary');
     }

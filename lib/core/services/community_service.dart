@@ -8,6 +8,8 @@ import 'package:whiteapp/features/community/models/post_comment.dart';
 class CommunityService {
   static const String _baseUrl = '${Env.apiBase}/community';
 
+  static List<CommunityPost>? cachedPosts;
+
   /// Get posts with optional challenge_day filter
   Future<List<CommunityPost>> getPosts({
     int? challengeDay,
@@ -29,9 +31,28 @@ class CommunityService {
 
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body);
-      return data.map((json) => CommunityPost.fromJson(json)).toList();
+      final posts = data.map((json) => CommunityPost.fromJson(json)).toList();
+      
+      // Cache only the general feed
+      if (challengeDay == null && levelId == null && challengeId == null) {
+        cachedPosts = posts;
+      }
+      
+      return posts;
     } else {
       throw Exception('Failed to load posts: ${response.body}');
+    }
+  }
+
+  /// Get pending posts for moderation (Staff only)
+  Future<List<CommunityPost>> getPendingPosts() async {
+    final response = await ApiService.authorizedRequest('$_baseUrl/posts/?moderation_status=pending');
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((json) => CommunityPost.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load pending posts: ${response.body}');
     }
   }
 
@@ -165,6 +186,31 @@ class CommunityService {
 
     if (response.statusCode != 201) {
       throw Exception('Failed to react to post: ${response.body}');
+    }
+  }
+
+  /// Approve a post (Staff only)
+  Future<void> approvePost(int postId) async {
+    final response = await ApiService.authorizedRequest(
+      '$_baseUrl/posts/$postId/approve/',
+      method: 'POST',
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to approve post: ${response.body}');
+    }
+  }
+
+  /// Reject a post (Staff only)
+  Future<void> rejectPost(int postId, {String reason = ''}) async {
+    final response = await ApiService.authorizedRequest(
+      '$_baseUrl/posts/$postId/reject/',
+      method: 'POST',
+      body: {'reason': reason},
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to reject post: ${response.body}');
     }
   }
 }

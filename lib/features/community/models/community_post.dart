@@ -3,6 +3,7 @@ class CommunityPost {
   final int id;
   final int author;
   final String authorName;
+  final String? authorAvatar;
   final String authorCountryFlag;
   final String visibility;
   final String originalLanguage;
@@ -34,6 +35,7 @@ class CommunityPost {
     required this.id,
     required this.author,
     required this.authorName,
+    this.authorAvatar,
     required this.authorCountryFlag,
     required this.visibility,
     required this.originalLanguage,
@@ -67,6 +69,7 @@ class CommunityPost {
       id: json['id'] as int,
       author: json['author'] as int,
       authorName: json['author_name'] as String? ?? 'User',
+      authorAvatar: json['author_avatar'] as String?,
       authorCountryFlag: json['author_country_flag'] as String? ?? '',
       visibility: json['visibility'] as String? ?? 'public',
       originalLanguage: json['original_language'] as String? ?? 'en',

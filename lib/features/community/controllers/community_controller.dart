@@ -11,6 +11,7 @@ class CommunityController extends ChangeNotifier {
 
   List<CommunityPost> _posts = [];
   List<CommunityPost> _recoveryStories = [];
+  List<CommunityPost> _pendingPosts = [];
   bool _isLoading = false;
   String? _error;
   int? _selectedChallengeDay;
@@ -23,6 +24,7 @@ class CommunityController extends ChangeNotifier {
 
   List<CommunityPost> get posts => _posts;
   List<CommunityPost> get recoveryStories => _recoveryStories;
+  List<CommunityPost> get pendingPosts => _pendingPosts;
   bool get isLoading => _isLoading;
   String? get error => _error;
   int? get selectedChallengeDay => _selectedChallengeDay;
@@ -91,6 +93,23 @@ class CommunityController extends ChangeNotifier {
     try {
       final stories = await _communityService.getRecoveryStories();
       _recoveryStories = stories;
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      rethrow;
+    }
+  }
+  Future<void> fetchPendingPosts() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final pending = await _communityService.getPendingPosts();
+      _pendingPosts = pending;
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -295,4 +314,31 @@ class CommunityController extends ChangeNotifier {
       return false;
     }
   }
+
+  Future<bool> approvePost(int postId) async {
+    try {
+      await _communityService.approvePost(postId);
+      fetchPosts();
+      fetchPendingPosts();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> rejectPost(int postId, {String reason = ''}) async {
+    try {
+      await _communityService.rejectPost(postId, reason: reason);
+      fetchPosts();
+      fetchPendingPosts();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
 }

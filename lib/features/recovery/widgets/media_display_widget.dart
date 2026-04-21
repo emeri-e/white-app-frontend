@@ -10,6 +10,7 @@ import 'package:whiteapp/core/parsers/srt_parser.dart';
 import 'package:http/http.dart' as http;
 import 'package:whiteapp/core/services/tts_service.dart';
 import 'package:whiteapp/core/constants/env.dart';
+import 'package:whiteapp/core/widgets/full_screen_video_player.dart';
 
 class MediaDisplayWidget extends StatefulWidget {
   final Map<String, dynamic> media;
@@ -514,7 +515,16 @@ class _MediaDisplayWidgetState extends State<MediaDisplayWidget> {
                           child: IconButton(
                             icon: const Icon(Icons.fullscreen, color: Colors.white),
                             onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fullscreen not implemented yet')));
+                              if (_videoController == null) return;
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => FullScreenVideoPlayer(controller: _videoController!),
+                                ),
+                              ).then((_) {
+                                // Refresh state in case playback changed in fullscreen
+                                setState(() {});
+                              });
                             },
                           ),
                         ),

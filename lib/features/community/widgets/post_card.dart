@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:whiteapp/features/community/controllers/community_controller.dart';
 import 'package:whiteapp/features/community/models/community_post.dart';
 import 'package:whiteapp/features/community/screens/post_detail_screen.dart';
+import 'package:whiteapp/features/profile/services/profile_service.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 class PostCard extends StatefulWidget {
@@ -33,26 +34,6 @@ class _PostCardState extends State<PostCard> {
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to load original: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _reportPost() async {
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => _ReportDialog(),
-    );
-
-    if (reason != null && reason.isNotEmpty) {
-      final controller = Provider.of<CommunityController>(context, listen: false);
-      final success = await controller.reportContent(postId: widget.post.id, reason: reason);
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success ? 'Post reported' : 'Failed to report: ${controller.error}'),
-          ),
         );
       }
     }
@@ -90,6 +71,30 @@ class _PostCardState extends State<PostCard> {
     }
   }
 
+  Future<void> _reportPost() async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => const _ReasonDialog(
+        title: 'Report Post',
+        hintText: 'Why are you reporting this post?',
+        submitLabel: 'Report',
+      ),
+    );
+
+    if (reason != null && mounted) {
+      final controller = Provider.of<CommunityController>(context, listen: false);
+      final success = await controller.reportContent(postId: widget.post.id, reason: reason);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success ? 'Post reported' : 'Failed to report: ${controller.error}'),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _likePost() async {
     final controller = Provider.of<CommunityController>(context, listen: false);
     await controller.reactToPost(widget.post.id, 'like');
@@ -108,7 +113,11 @@ class _PostCardState extends State<PostCard> {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(
+          color: widget.post.moderationStatus == 'pending' 
+              ? Colors.orangeAccent.withOpacity(0.3) 
+              : (widget.post.moderationStatus == 'rejected' ? Colors.redAccent.withOpacity(0.3) : Colors.white10),
+        ),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
@@ -120,39 +129,67 @@ class _PostCardState extends State<PostCard> {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  _buildAvatar(),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              widget.post.authorName,
-                              style: GoogleFonts.outfit(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            if (widget.post.authorCountryFlag.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              Text(widget.post.authorCountryFlag, style: const TextStyle(fontSize: 14)),
-                            ],
-                          ],
+                  GestureDetector(
+                    onTap: widget.post.visibility == 'anonymous' 
+                      ? null 
+                      : () => Navigator.pushNamed(
+                          context, 
+                          '/public-profile', 
+                          arguments: widget.post.author
                         ),
-                        Text(
-                          timeago.format(widget.post.createdAt),
-                          style: GoogleFonts.outfit(color: Colors.white30, fontSize: 12),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: Colors.white10,
+                          backgroundImage: widget.post.authorAvatar != null 
+                            ? NetworkImage(widget.post.authorAvatar!) 
+                            : null,
+                          child: widget.post.authorAvatar == null 
+                            ? const Icon(Icons.person, size: 18, color: Colors.white30) 
+                            : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  widget.post.authorName,
+                                  style: GoogleFonts.outfit(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    decoration: widget.post.visibility == 'anonymous' 
+                                      ? TextDecoration.none 
+                                      : TextDecoration.underline,
+                                    decorationColor: Colors.white24,
+                                  ),
+                                ),
+                                if (widget.post.authorCountryFlag.isNotEmpty) ...[
+                                  const SizedBox(width: 4),
+                                  Text(widget.post.authorCountryFlag, style: const TextStyle(fontSize: 12)),
+                                ],
+                              ],
+                            ),
+                            Text(
+                              '${widget.post.createdAt.day} ${_getMonth(widget.post.createdAt.month)} • ${_getTimeAgo(widget.post.createdAt)}',
+                              style: GoogleFonts.outfit(color: Colors.white38, fontSize: 11),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
+                  const Spacer(),
                   _buildMenuButton(),
                 ],
               ),
             ),
+
+            // Moderation Actions for Staff
+            _buildModerationActions(),
 
             // Target/Context Badges
             _buildContextBadges(),
@@ -221,10 +258,18 @@ class _PostCardState extends State<PostCard> {
   }
 
   Widget _buildMenuButton() {
-    return PopupMenuButton(
-      icon: const Icon(Icons.more_vert_rounded, color: Colors.white30),
+    final user = ProfileService.cachedProfile?.user;
+    final isAuthor = user?.id == widget.post.author;
+    final isStaff = user?.isStaff ?? false;
+
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert, color: Colors.white38),
       color: const Color(0xFF1E293B),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: (value) {
+        if (value == 'report') _reportPost();
+        if (value == 'delete') _deletePost();
+      },
       itemBuilder: (context) => [
         PopupMenuItem(
           value: 'report',
@@ -236,21 +281,18 @@ class _PostCardState extends State<PostCard> {
             ],
           ),
         ),
-        PopupMenuItem(
-          value: 'delete',
-          child: Row(
-            children: [
-              const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
-              const SizedBox(width: 12),
-              Text('Delete', style: GoogleFonts.outfit(color: Colors.redAccent)),
-            ],
+        if (isAuthor || isStaff)
+          PopupMenuItem(
+            value: 'delete',
+            child: Row(
+              children: [
+                const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                const SizedBox(width: 12),
+                Text('Delete', style: GoogleFonts.outfit(color: Colors.redAccent)),
+              ],
+            ),
           ),
-        ),
       ],
-      onSelected: (value) {
-        if (value == 'report') _reportPost();
-        if (value == 'delete') _deletePost();
-      },
     );
   }
 
@@ -267,6 +309,13 @@ class _PostCardState extends State<PostCard> {
 
     if (widget.post.challenge != null) {
       badges.add(_buildBadge(widget.post.challenge!['title'], Colors.orangeAccent));
+    }
+
+    // Moderation Status Badges
+    if (widget.post.moderationStatus == 'pending') {
+      badges.add(_buildBadge("Pending Review", Colors.orangeAccent));
+    } else if (widget.post.moderationStatus == 'rejected') {
+      badges.add(_buildBadge("Rejected", Colors.redAccent));
     }
 
     if (badges.isEmpty) return const SizedBox.shrink();
@@ -288,6 +337,89 @@ class _PostCardState extends State<PostCard> {
       child: Text(
         text,
         style: GoogleFonts.outfit(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildModerationActions() {
+    final currentUser = ProfileService.cachedProfile?.user;
+    if (currentUser == null || !currentUser.isStaff) return const SizedBox.shrink();
+    if (widget.post.moderationStatus != 'pending') return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orangeAccent.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orangeAccent.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'MODERATION QUEUE',
+            style: GoogleFonts.outfit(color: Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildModerationButton(
+                  label: 'APPROVE',
+                  icon: Icons.check_circle_rounded,
+                  color: Colors.greenAccent,
+                  onPressed: () => Provider.of<CommunityController>(context, listen: false).approvePost(widget.post.id),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildModerationButton(
+                  label: 'REJECT',
+                  icon: Icons.cancel_rounded,
+                  color: Colors.redAccent,
+                  onPressed: () async {
+                    final reason = await showDialog<String>(
+                      context: context,
+                      builder: (context) => const _ReasonDialog(
+                        title: 'Reject Post',
+                        hintText: 'Provide a reason (optional)...',
+                        submitLabel: 'Reject',
+                        isOptional: true,
+                      ),
+                    );
+                    if (reason != null && mounted) {
+                      Provider.of<CommunityController>(context, listen: false).rejectPost(widget.post.id, reason: reason);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModerationButton({required String label, required IconData icon, required Color color, required VoidCallback onPressed}) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 8),
+            Text(label, style: GoogleFonts.outfit(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+          ],
+        ),
       ),
     );
   }
@@ -381,14 +513,35 @@ class _PostCardState extends State<PostCard> {
       ),
     );
   }
+
+  String _getMonth(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[month - 1];
+  }
+
+  String _getTimeAgo(DateTime date) {
+    return timeago.format(date);
+  }
 }
 
-class _ReportDialog extends StatefulWidget {
+class _ReasonDialog extends StatefulWidget {
+  final String title;
+  final String hintText;
+  final String submitLabel;
+  final bool isOptional;
+
+  const _ReasonDialog({
+    required this.title,
+    required this.hintText,
+    required this.submitLabel,
+    this.isOptional = false,
+  });
+
   @override
-  State<_ReportDialog> createState() => _ReportDialogState();
+  State<_ReasonDialog> createState() => _ReasonDialogState();
 }
 
-class _ReportDialogState extends State<_ReportDialog> {
+class _ReasonDialogState extends State<_ReasonDialog> {
   final _controller = TextEditingController();
 
   @override
@@ -401,14 +554,15 @@ class _ReportDialogState extends State<_ReportDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: const Color(0xFF1E293B),
-      title: Text('Report Post', style: GoogleFonts.outfit(color: Colors.white)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(widget.title, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold)),
       content: TextField(
         controller: _controller,
         style: GoogleFonts.outfit(color: Colors.white),
         decoration: InputDecoration(
-          labelText: 'Reason',
+          labelText: 'Reason${widget.isOptional ? " (Optional)" : ""}',
           labelStyle: GoogleFonts.outfit(color: Colors.white30),
-          hintText: 'Why are you reporting this post?',
+          hintText: widget.hintText,
           hintStyle: GoogleFonts.outfit(color: Colors.white10),
           enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white10)),
           focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
@@ -422,7 +576,7 @@ class _ReportDialogState extends State<_ReportDialog> {
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, _controller.text),
-          child: Text('Report', style: GoogleFonts.outfit(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+          child: Text(widget.submitLabel, style: GoogleFonts.outfit(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
         ),
       ],
     );

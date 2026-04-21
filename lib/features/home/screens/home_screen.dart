@@ -101,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       extendBody: true, // Allows background to extend behind the nav bar
+      resizeToAvoidBottomInset: false, // Prevent keyboard from squeezing bottom nav
       body: AbstractBackground(
         scrollProgress: effectiveProgress,
         child: SafeArea(
@@ -164,20 +165,22 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> {
-  UserProfile? _profile;
-  Map<String, dynamic>? _quote;
-  List<MoodEntry> _moodHistory = [];
-  CommunityPost? _latestPost;
+  bool _isLoading = ProfileService.cachedProfile == null;
+  UserProfile? _profile = ProfileService.cachedProfile;
+  Map<String, dynamic>? _quote = RecoveryService.cachedQuote;
+  List<MoodEntry> _moodHistory = ProgressService.cachedMoodHistory ?? [];
+  CommunityPost? _latestPost = (CommunityService.cachedPosts ?? []).isNotEmpty ? CommunityService.cachedPosts!.first : null;
   SupportGroup? _upcomingSessionGroup;
-  dynamic _currentSession;
-  bool _isLoading = true;
+  Map<String, dynamic>? _currentSession = SupportGroupService.cachedCurrentSession;
+  
+  Duration _cleanDuration = Duration.zero;
+  Timer? _streakTimer;
   bool _hasShownAssessmentPrompt = false;
   final CommunityService _communityService = CommunityService();
-  Timer? _timer;
-  Duration _cleanDuration = Duration.zero;
 
   // Pull-down-and-hold state
   double _pullDownDistance = 0.0;
+  double _swipeUpDistance = 0.0;
   bool _isTransitioning = false;
   static const double _pullThreshold = 120.0;
 
@@ -185,22 +188,29 @@ class _HomeTabState extends State<HomeTab> {
   void initState() {
     super.initState();
     _loadData();
-    _startTimer();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_profile?.cleanDate != null) {
+    
+    // Initialize streak duration if profile is already available
+    if (_profile?.cleanDate != null) {
+      try {
         final cleanDate = DateTime.parse(_profile!.cleanDate!);
-        setState(() {
-          _cleanDuration = DateTime.now().difference(cleanDate);
-        });
+        _cleanDuration = DateTime.now().difference(cleanDate);
+      } catch (e) {
+        debugPrint("Error parsing clean date: $e");
+      }
+    } else if (_profile != null) {
+      _cleanDuration = Duration(days: _profile!.cleanDays);
+    }
+
+    _streakTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_profile?.cleanDate != null) {
+        try {
+          final cleanDate = DateTime.parse(_profile!.cleanDate!);
+          setState(() {
+            _cleanDuration = DateTime.now().difference(cleanDate);
+          });
+        } catch (e) {
+          debugPrint("Error in streak timer: $e");
+        }
       } else if (_profile != null) {
         // Fallback to cleanDays if cleanDate is not set
         setState(() {
@@ -210,9 +220,15 @@ class _HomeTabState extends State<HomeTab> {
     });
   }
 
-  List<dynamic> _enrollments = [];
-  Map<String, dynamic>? _dashboardData;
-  Map<String, dynamic>? _dailyContent;
+  @override
+  void dispose() {
+    _streakTimer?.cancel();
+    super.dispose();
+  }
+
+  List<dynamic> _enrollments = RecoveryService.cachedEnrollments ?? [];
+  Map<String, dynamic>? _dashboardData = RecoveryService.cachedDashboardData;
+  Map<String, dynamic>? _dailyContent = RecoveryService.cachedDailyLearningSummary;
 
   // ... (existing methods)
 
@@ -344,8 +360,21 @@ class _HomeTabState extends State<HomeTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+    // Show loading screen on first use when no cached data is available
+    if (_isLoading && _profile == null) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: Colors.white54),
+            SizedBox(height: 16),
+            Text(
+              'Loading your dashboard...',
+              style: TextStyle(color: Colors.white54, fontSize: 14),
+            ),
+          ],
+        ),
+      );
     }
 
     return VisibilityDetector(
@@ -358,7 +387,7 @@ class _HomeTabState extends State<HomeTab> {
       child: PageView(
         controller: widget.pageController,
         scrollDirection: Axis.vertical,
-        physics: const NeverScrollableScrollPhysics(),
+        physics: const BouncingScrollPhysics(),
         children: [
           _buildMinimalView(),
           _buildDashboardView(),
@@ -373,26 +402,16 @@ class _HomeTabState extends State<HomeTab> {
     final minutes = _cleanDuration.inMinutes % 60;
     final seconds = _cleanDuration.inSeconds % 60;
 
-    return GestureDetector(
-      onVerticalDragEnd: (details) {
-        // swipe up to go to dashboard
-        if (details.primaryVelocity != null && details.primaryVelocity! < -300) {
-          widget.pageController.animateToPage(
-            1,
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOutQuart,
-          );
-        }
-      },
+    return SizedBox.expand(
       child: Stack(
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const Spacer(flex: 2),
+                const Spacer(flex: 1),
                 Text(
                   "Welcome back,",
                   style: GoogleFonts.outfit(
@@ -408,7 +427,7 @@ class _HomeTabState extends State<HomeTab> {
                       fontWeight: FontWeight.bold
                   ),
                 ),
-                const SizedBox(height: 60),
+                const SizedBox(height: 40), // Slightly reduced from 60
 
                 // Streak Section
                 FittedBox(
@@ -439,27 +458,25 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                 ),
 
-                const Spacer(flex: 1),
+                const SizedBox(height: 80), // Increased to lower the quote card
 
                 if (_quote != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 40),
-                    child: DailyInspirationCard(
-                      content: _quote!['content'],
-                      author: _quote!['author'],
-                    ),
+                  DailyInspirationCard(
+                    content: _quote!['content'],
+                    author: _quote!['author'],
                   ),
 
-                const Spacer(flex: 2),
+                const Spacer(flex: 2), // Reduced to allow quote to sit lower
+                const SizedBox(height: 80), // Safe gap for the Relapse Button
               ],
             ),
           ),
 
-          // Relapse Button Positioned to overlap background circles
+          // Relapse Button Positioned at bottom
           Positioned(
             left: 0,
             right: 0,
-            top: MediaQuery.of(context).size.height * 0.85 - 30, // Centered on the target Y
+            bottom: MediaQuery.of(context).padding.bottom + 16,
             child: Center(
               child: RelapseButton(
                 onRelapseLogged: () {
@@ -1093,7 +1110,7 @@ class _RelapseButtonState extends State<RelapseButton> {
   bool _isRecording = false;
   bool _isCancelled = false;
   final TextEditingController _textController = TextEditingController();
-  late AnimationController _animationController;
+  final FocusNode _focusNode = FocusNode();
   final AudioRecorder _audioRecorder = AudioRecorder();
   String? _audioPath;
   Timer? _recordingTimer;
@@ -1102,16 +1119,20 @@ class _RelapseButtonState extends State<RelapseButton> {
   @override
   void initState() {
     super.initState();
-    // _animationController = AnimationController(
-    //   vsync: this,
-    //   duration: const Duration(seconds: 4),
-    // )..repeat();
+    _focusNode.addListener(() {
+      // Auto-collapse when focus is lost (user tapped elsewhere)
+      if (!_focusNode.hasFocus && _isExpanded && !_isRecording) {
+        setState(() {
+          _isExpanded = false;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
-    // _animationController.dispose();
     _textController.dispose();
+    _focusNode.dispose();
     _audioRecorder.dispose();
     _recordingTimer?.cancel();
     super.dispose();
@@ -1122,6 +1143,12 @@ class _RelapseButtonState extends State<RelapseButton> {
       setState(() {
         _isExpanded = !_isExpanded;
       });
+      if (_isExpanded) {
+        // Request focus when expanding
+        Future.delayed(const Duration(milliseconds: 350), () {
+          _focusNode.requestFocus();
+        });
+      }
     }
   }
 
@@ -1258,72 +1285,70 @@ class _RelapseButtonState extends State<RelapseButton> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
-        width: _isExpanded ? MediaQuery.of(context).size.width * 0.8 : 120,
-        height: 60,
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Wavy Background
-            // Static Background
-            if (!_isExpanded)
-              Container(
-                width: 120,
-                height: 120,
+        width: _isExpanded ? MediaQuery.of(context).size.width * 0.8 : 80,
+        height: _isExpanded ? 56 : 80,
+        child: _isExpanded
+            ? Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _textController,
+                          focusNode: _focusNode,
+                          autofocus: false,
+                          style: GoogleFonts.outfit(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: "What happened?",
+                            hintStyle: GoogleFonts.outfit(color: Colors.white54),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                          onSubmitted: (value) => _submitRelapse(value),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.send, color: Colors.redAccent, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _submitRelapse(_textController.text),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: _isCancelled ? Colors.grey.withOpacity(0.3) : Colors.redAccent.withOpacity(0.3),
+                    color: _isCancelled
+                        ? Colors.grey.withOpacity(0.3)
+                        : Colors.redAccent.withOpacity(0.3),
                     width: 2,
                   ),
                 ),
-              ),
-
-            // Content
-            _isExpanded
-                ? Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _textController,
-                            autofocus: true,
-                            style: GoogleFonts.outfit(color: Colors.white),
-                            decoration: InputDecoration(
-                              hintText: "What happened?",
-                              hintStyle: GoogleFonts.outfit(color: Colors.white54),
-                              border: InputBorder.none,
-                            ),
-                            onSubmitted: (value) => _submitRelapse(value),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.send, color: Colors.redAccent),
-                          onPressed: () => _submitRelapse(_textController.text),
-                        ),
-                      ],
-                    ),
-                  )
-                : Column(
+                child: Center(
+                  child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _isRecording 
-                          ? (_isCancelled ? "Release to Cancel" : "Recording...") 
-                          : "Relapse",
+                        _isRecording
+                            ? (_isCancelled ? "Cancel" : "Rec...")
+                            : "Relapse",
                         style: GoogleFonts.outfit(
                           color: _isCancelled ? Colors.grey : Colors.redAccent,
-                          fontSize: 16,
+                          fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
+                          letterSpacing: 1,
                         ),
                       ),
                       if (_isRecording && !_isCancelled)
@@ -1331,14 +1356,14 @@ class _RelapseButtonState extends State<RelapseButton> {
                           _formatDuration(_recordingDuration),
                           style: GoogleFonts.outfit(
                             color: Colors.white,
-                            fontSize: 12,
+                            fontSize: 11,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                     ],
                   ),
-          ],
-        ),
+                ),
+              ),
       ),
     );
   }

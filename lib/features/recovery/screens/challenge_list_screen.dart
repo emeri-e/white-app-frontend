@@ -15,27 +15,65 @@ class ChallengeListScreen extends StatefulWidget {
 
 class _ChallengeListScreenState extends State<ChallengeListScreen> {
   final Set<int> _autoCompletingChallenges = {};
+  List<dynamic>? _availableChallenges;
+  List<dynamic>? _completedChallenges;
+  bool _isLoadingAvailable = true;
+  bool _isLoadingCompleted = true;
 
-  Future<List<dynamic>> _fetchChallenges(String status) async {
-    return RecoveryService.getChallenges(status: status);
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    _fetchChallenges('available');
+    _fetchChallenges('completed');
+  }
+
+  Future<void> _fetchChallenges(String status) async {
+    try {
+      final challenges = await RecoveryService.getChallenges(status: status);
+      if (mounted) {
+        setState(() {
+          if (status == 'available') {
+            _availableChallenges = challenges;
+            _isLoadingAvailable = false;
+            _checkAutoCompletions(challenges);
+          } else {
+            _completedChallenges = challenges;
+            _isLoadingCompleted = false;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          if (status == 'available') {
+            _isLoadingAvailable = false;
+          } else {
+            _isLoadingCompleted = false;
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error fetching $status challenges: $e')));
+      }
+    }
   }
 
   void _checkAutoCompletions(List<dynamic> challenges) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      for (var challenge in challenges) {
-        final isCompleted = challenge['is_completed'] ?? false;
-        final type = challenge['type'];
-        final progressPercentage = (challenge['progress_percentage'] ?? 0.0).toDouble();
+    for (var challenge in challenges) {
+      final isCompleted = challenge['is_completed'] ?? false;
+      final type = challenge['type'];
+      final progressPercentage = (challenge['progress_percentage'] ?? 0.0).toDouble();
 
-        if (type == 'time_based' && !isCompleted && progressPercentage >= 1.0) {
-          final id = challenge['id'];
-          if (!_autoCompletingChallenges.contains(id)) {
-            _autoCompletingChallenges.add(id);
-            _completeChallenge(challenge, context);
-          }
+      if (type == 'time_based' && !isCompleted && progressPercentage >= 1.0) {
+        final id = challenge['id'];
+        if (!_autoCompletingChallenges.contains(id)) {
+          _autoCompletingChallenges.add(id);
+          _completeChallenge(challenge, context);
         }
       }
-    });
+    }
   }
 
   @override
@@ -73,105 +111,141 @@ class _ChallengeListScreenState extends State<ChallengeListScreen> {
   }
 
   Widget _buildChallengeList(String status) {
-    return FutureBuilder<List<dynamic>>(
-      future: _fetchChallenges(status),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        } else if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)));
-        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(child: Text('No ${status == 'completed' ? 'completed' : 'active'} challenges found.', style: const TextStyle(color: Colors.white)));
-        }
+    final isLoading = status == 'available' ? _isLoadingAvailable : _isLoadingCompleted;
+    final challenges = status == 'available' ? _availableChallenges : _completedChallenges;
 
-        final challenges = snapshot.data!;
-        if (status == 'available') {
-          _checkAutoCompletions(challenges);
-        }
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(20),
-          itemCount: challenges.length,
-          itemBuilder: (context, index) {
-            final challenge = challenges[index];
-            final isLocked = challenge['is_locked'] ?? false;
-            final isCompleted = challenge['is_completed'] ?? false;
-            final type = challenge['type'];
-            final progressPercentage = (challenge['progress_percentage'] ?? 0.0).toDouble();
-            final durationMinutes = challenge['duration_minutes'] ?? 0;
-            final startedAt = challenge['started_at'];
-            final tasks = challenge['tasks'] ?? [];
-            final completedTasks = challenge['completed_tasks'] ?? [];
-            final restarts = challenge['restarts'] as List? ?? [];
-            
-            return _ChallengeCard(
-              title: challenge['title'] ?? 'Untitled Challenge',
-              description: challenge['description'] ?? '',
-              reward: '${challenge['gold_reward']} Gold',
-              isCompleted: isCompleted,
-              isLocked: isLocked,
-              type: type,
-              progressPercentage: progressPercentage,
-              durationMinutes: durationMinutes,
-              startedAt: startedAt,
-              tasks: tasks,
-              completedTasks: completedTasks,
-              restarts: restarts,
-              onStart: () async {
-                 try {
-                   await RecoveryService.startChallenge(challenge['id']);
-                   setState(() {});
-                 } catch (e) {
-                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-                 }
-              },
-              onTaskToggled: (taskId, isDone) async {
-                 try {
-                    final result = await RecoveryService.updateChallengeTask(challenge['id'], taskId, isDone);
-                    setState(() {});
-                    if (result['is_completed'] == true || (result['completed'] == true)) {
-                      if (mounted) {
-                        showDialog(
-                          context: context,
-                          barrierDismissible: false,
-                          builder: (context) => CelebrationDialog(
-                            title: "Challenge Completed!",
-                            message: "You earned +${challenge['gold_reward']} Gold and +${challenge['gem_reward']} Gems!",
-                            buttonText: "Awesome!",
-                            icon: Icons.celebration,
-                            onContinue: () => Navigator.pop(context),
-                          ),
-                        ).then((_) {
-                            if (result['new_badges'] != null && (result['new_badges'] as List).isNotEmpty) {
-                              if (mounted) showBadgeEarnedDialog(context, result['new_badges']);
-                            }
-                          });
-                      }
+    if (challenges == null || challenges.isEmpty) {
+      return Center(
+        child: Text(
+          'No ${status == 'completed' ? 'completed' : 'active'} challenges found.',
+          style: const TextStyle(color: Colors.white),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(20),
+      itemCount: challenges.length,
+      itemBuilder: (context, index) {
+        final challenge = challenges[index];
+        final isLocked = challenge['is_locked'] ?? false;
+        final isCompleted = challenge['is_completed'] ?? false;
+        final type = challenge['type'];
+        final progressPercentage = (challenge['progress_percentage'] ?? 0.0).toDouble();
+        final durationMinutes = challenge['duration_minutes'] ?? 0;
+        final startedAt = challenge['started_at'];
+        final tasks = challenge['tasks'] ?? [];
+        final completedTasks = challenge['completed_tasks'] ?? [];
+        final restarts = challenge['restarts'] as List? ?? [];
+
+        return _ChallengeCard(
+          title: challenge['title'] ?? 'Untitled Challenge',
+          description: challenge['description'] ?? '',
+          reward: '${challenge['gold_reward']} Gold',
+          isCompleted: isCompleted,
+          isLocked: isLocked,
+          type: type,
+          progressPercentage: progressPercentage,
+          durationMinutes: durationMinutes,
+          startedAt: startedAt,
+          tasks: tasks,
+          completedTasks: completedTasks,
+          restarts: restarts,
+          onStart: () async {
+            // Optimistic update: mark as started locally
+            final originalStartedAt = challenge['started_at'];
+            setState(() {
+              challenge['started_at'] = DateTime.now().toIso8601String();
+            });
+
+            try {
+              await RecoveryService.startChallenge(challenge['id']);
+              _fetchChallenges('available'); // Sync with server
+            } catch (e) {
+              // Rollback on error
+              setState(() {
+                challenge['started_at'] = originalStartedAt;
+              });
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+            }
+          },
+          onTaskToggled: (taskId, isDone) async {
+            // Optimistic update: toggle task locally
+            final originalCompletedTasks = List.from(completedTasks);
+            setState(() {
+              if (isDone) {
+                if (!completedTasks.contains(taskId)) completedTasks.add(taskId);
+              } else {
+                completedTasks.remove(taskId);
+              }
+              // Calculate new progress locally if possible
+              if (tasks.isNotEmpty) {
+                challenge['progress_percentage'] = completedTasks.length / tasks.length;
+              }
+            });
+
+            try {
+              final result = await RecoveryService.updateChallengeTask(challenge['id'], taskId, isDone);
+              
+              // If completion triggered, sync and show dialog
+              if (result['is_completed'] == true || result['completed'] == true) {
+                _loadData(); // Sync both lists
+                if (mounted) {
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => CelebrationDialog(
+                      title: "Challenge Completed!",
+                      message: "You earned +${challenge['gold_reward']} Gold and +${challenge['gem_reward']} Gems!",
+                      buttonText: "Awesome!",
+                      icon: Icons.celebration,
+                      onContinue: () => Navigator.pop(context),
+                    ),
+                  ).then((_) {
+                    if (result['new_badges'] != null && (result['new_badges'] as List).isNotEmpty) {
+                      if (mounted) showBadgeEarnedDialog(context, result['new_badges']);
                     }
-                 } catch (e) {
-                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-                 }
-              },
-              onTap: () async {
-                if (isLocked) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Complete the previous level to unlock this challenge!")),
-                  );
-                } else if (!isCompleted) {
-                  if (type == 'time_based') {
-                    if (progressPercentage < 1.0) {
-                       ScaffoldMessenger.of(context).showSnackBar(
-                         const SnackBar(content: Text("Keep going! Meet the time requirement to finish this challenge.")),
-                       );
-                    } else {
-                      await _completeChallenge(challenge, context);
-                    }
-                  } else if (tasks.isEmpty) {
-                    await _completeChallenge(challenge, context);
-                  }
+                  });
                 }
-              },
-            );
+              } else {
+                 // Minor sync for progress etc
+                 setState(() {
+                    challenge['progress_percentage'] = (result['progress_percentage'] ?? 0.0).toDouble();
+                 });
+              }
+            } catch (e) {
+              // Rollback on error
+              setState(() {
+                challenge['completed_tasks'] = originalCompletedTasks;
+                if (tasks.isNotEmpty) {
+                   challenge['progress_percentage'] = originalCompletedTasks.length / tasks.length;
+                }
+              });
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+            }
+          },
+          onTap: () async {
+            if (isLocked) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Complete the previous level to unlock this challenge!")),
+              );
+            } else if (!isCompleted) {
+              if (type == 'time_based') {
+                if (progressPercentage < 1.0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Keep going! Meet the time requirement to finish this challenge.")),
+                  );
+                } else {
+                  await _completeChallenge(challenge, context);
+                }
+              } else if (tasks.isEmpty) {
+                await _completeChallenge(challenge, context);
+              }
+            }
           },
         );
       },

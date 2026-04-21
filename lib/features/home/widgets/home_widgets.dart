@@ -737,7 +737,7 @@ class _ChallengeCardState extends State<ChallengeCard> {
           onTap: widget.onTap,
           borderRadius: BorderRadius.circular(24),
           child: Padding(
-            padding: const EdgeInsets.all(20.0),
+            padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -749,14 +749,14 @@ class _ChallengeCardState extends State<ChallengeCard> {
                         Icon(
                           widget.isActive ? Icons.bolt_rounded : Icons.lock_open_rounded, 
                           color: widget.isActive ? Colors.white : Colors.white70, 
-                          size: 24
+                          size: 20
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          widget.isActive ? "ACTIVE CHALLENGE" : "NEW CHALLENGE AVAILABLE",
+                          widget.isActive ? "ACTIVE" : "NEW CHALLENGE",
                           style: GoogleFonts.outfit(
                             color: widget.isActive ? Colors.white : Colors.white70,
-                            fontSize: 12,
+                            fontSize: 10,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1.2,
                           ),
@@ -765,65 +765,65 @@ class _ChallengeCardState extends State<ChallengeCard> {
                     ),
                     if (widget.isActive)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                           color: Colors.white24,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           "${(_progress * 100).toStringAsFixed(0)}%",
                           style: GoogleFonts.outfit(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                            fontSize: 12,
                           ),
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Text(
                   widget.challenge['title'] ?? 'Challenge',
                   style: GoogleFonts.outfit(
                     color: Colors.white,
-                    fontSize: 22,
+                    fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   widget.challenge['description'] ?? '',
                   style: GoogleFonts.outfit(
                     color: Colors.white.withOpacity(0.8),
-                    fontSize: 14,
+                    fontSize: 13,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (restartCount > 0) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.refresh_rounded, color: Colors.orangeAccent, size: 16),
+                      const Icon(Icons.refresh_rounded, color: Colors.orangeAccent, size: 14),
                       const SizedBox(width: 4),
                       Text(
                         "Restarted $restartCount time${restartCount > 1 ? 's' : ''}",
                         style: GoogleFonts.outfit(
                           color: Colors.orangeAccent,
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
                 ],
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
                 if (widget.isActive)
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                     child: LinearProgressIndicator(
                       value: _progress,
-                      minHeight: 8,
+                      minHeight: 6,
                       backgroundColor: Colors.white24,
                       color: Colors.white,
                     ),
@@ -843,17 +843,17 @@ class _ChallengeCardState extends State<ChallengeCard> {
                         backgroundColor: Colors.white,
                         foregroundColor: Colors.blueAccent,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                       ),
                       child: _isLoading
                           ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent),
-                            )
+                               width: 18,
+                               height: 18,
+                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent),
+                             )
                           : Text(
                               "Start Challenge",
-                              style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13),
                             ),
                     ),
                   ),

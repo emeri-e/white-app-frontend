@@ -10,6 +10,7 @@ import 'package:whiteapp/core/widgets/abstract_background.dart';
 import 'package:whiteapp/features/profile/screens/notification_preferences_screen.dart';
 import 'package:whiteapp/features/profile/screens/offline_downloads_screen.dart';
 import 'package:whiteapp/features/feedback/screens/feedback_screen.dart';
+import 'package:whiteapp/features/community/screens/moderation_queue_screen.dart';
 import 'dart:ui';
 
 class ProfileScreen extends StatefulWidget {
@@ -26,9 +27,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
 
   // Controllers
+  final _usernameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _bioController = TextEditingController();
   final _locationController = TextEditingController();
   final _dailyGoalController = TextEditingController();
+  final _genderController = TextEditingController();
+  final _birthDateController = TextEditingController();
 
   late Future<List<dynamic>> _myBadgesFuture;
   List<dynamic> _availablePrograms = [];
@@ -75,9 +81,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _populateControllers() {
     if (_profile != null) {
+      _usernameController.text = _profile!.user.username ?? '';
+      _firstNameController.text = _profile!.user.firstName;
+      _lastNameController.text = _profile!.user.lastName;
       _bioController.text = _profile!.bio ?? '';
       _locationController.text = _profile!.location ?? '';
       _dailyGoalController.text = _profile!.dailyGoal.toString();
+      _genderController.text = _profile!.gender ?? '';
+      _birthDateController.text = _profile!.birthDate ?? '';
     }
   }
 
@@ -87,9 +98,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isLoading = true);
     try {
       final data = {
+        'user': {
+          'username': _usernameController.text,
+          'first_name': _firstNameController.text,
+          'last_name': _lastNameController.text,
+        },
         'bio': _bioController.text,
         'location': _locationController.text,
         'daily_goal': int.tryParse(_dailyGoalController.text) ?? 0,
+        'gender': _genderController.text,
+        'birth_date': _birthDateController.text,
       };
 
       final updatedProfile = await ProfileService.updateProfile(data);
@@ -265,7 +283,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          _profile?.user.username ?? 'User',
+                          _profile?.user.displayName ?? 'User',
                           style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
                         ),
                         Row(
@@ -306,13 +324,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _buildMyBadges(),
                       const SizedBox(height: 24),
 
+                      _buildSectionHeader('Account Information'),
+                      _buildGlassCard(
+                        child: Column(
+                          children: [
+                            _buildProfileField('Username', _usernameController, icon: Icons.alternate_email_rounded),
+                            const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(color: Colors.white24, height: 1)),
+                            _buildProfileField('First Name', _firstNameController, icon: Icons.person_outline_rounded),
+                            const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(color: Colors.white24, height: 1)),
+                            _buildProfileField('Last Name', _lastNameController, icon: Icons.person_outline_rounded),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
                       _buildSectionHeader('Personal Details'),
                       _buildGlassCard(
                         child: Column(
                           children: [
                             _buildProfileField('Bio', _bioController, icon: Icons.notes_rounded, maxLines: 2),
                             const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(color: Colors.white24, height: 1)),
-                            _buildProfileField('Daily Goal (mins)', _dailyGoalController, icon: Icons.bolt_rounded, isNumber: true),
+                            _buildProfileField('Location', _locationController, icon: Icons.location_on_outlined),
+                            const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(color: Colors.white24, height: 1)),
+                             _buildProfileField('Daily Goal (mins)', _dailyGoalController, icon: Icons.bolt_rounded, isNumber: true),
+                             const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(color: Colors.white24, height: 1)),
+                             _buildProfileField('Gender', _genderController, icon: Icons.people_outline_rounded, isGender: true),
+                             const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(color: Colors.white24, height: 1)),
+                             _buildProfileField('Birth Date', _birthDateController, icon: Icons.cake_outlined, isDate: true),
                           ],
                         ),
                       ),
@@ -349,6 +387,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
 
+                      if (_profile?.user.isStaff ?? false) ...[
+                        const SizedBox(height: 24),
+                        _buildSectionHeader('Staff Corner'),
+                        _buildGlassCard(
+                          child: _buildSettingsTile(
+                            icon: Icons.admin_panel_settings_rounded,
+                            title: 'Moderation Queue',
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ModerationQueueScreen())),
+                          ),
+                        ),
+                      ],
+
                       const SizedBox(height: 40),
                       _buildLogoutButton(),
                     ],
@@ -384,7 +434,103 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildProfileField(String label, TextEditingController controller, {required IconData icon, int maxLines = 1, bool isNumber = false}) {
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.tryParse(_birthDateController.text) ?? DateTime(2000),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Colors.blueAccent,
+              onPrimary: Colors.white,
+              surface: Color(0xFF1E293B),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        _birthDateController.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+      });
+    }
+  }
+
+  Widget _buildProfileField(String label, TextEditingController controller, {required IconData icon, int maxLines = 1, bool isNumber = false, bool isDate = false, bool isGender = false}) {
+    if (isGender) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: Colors.white38),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: GoogleFonts.outfit(color: Colors.white38, fontSize: 11)),
+                  _isEditing 
+                    ? DropdownButtonFormField<String>(
+                        value: controller.text.isEmpty ? null : controller.text.toLowerCase(),
+                        items: const [
+                          DropdownMenuItem(value: 'male', child: Text('Male')),
+                          DropdownMenuItem(value: 'female', child: Text('Female')),
+                          DropdownMenuItem(value: 'other', child: Text('Other')),
+                          DropdownMenuItem(value: 'prefer_not_to_say', child: Text('Prefer not to say')),
+                        ],
+                        onChanged: (val) => setState(() => controller.text = val ?? ''),
+                        dropdownColor: const Color(0xFF1E293B),
+                        style: GoogleFonts.outfit(color: Colors.white, fontSize: 16),
+                        decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Text(
+                            controller.text.isEmpty ? 'Not set' : (controller.text[0].toUpperCase() + controller.text.substring(1)),
+                            style: GoogleFonts.outfit(color: Colors.white, fontSize: 16),
+                          ),
+                      ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (isDate) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: Colors.white38),
+            const SizedBox(width: 16),
+            Expanded(
+              child: InkWell(
+                onTap: _isEditing ? () => _selectDate(context) : null,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: GoogleFonts.outfit(color: Colors.white38, fontSize: 11)),
+                    const SizedBox(height: 4),
+                    Text(
+                      controller.text.isEmpty ? 'Not set' : controller.text,
+                      style: GoogleFonts.outfit(color: Colors.white, fontSize: 16),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(

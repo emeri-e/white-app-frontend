@@ -21,7 +21,7 @@ class Assessment {
 
   factory Assessment.fromJson(Map<String, dynamic> json) {
     return Assessment(
-      id: json['id'],
+      id: (json['id'] as num).toInt(),
       title: json['title'],
       description: json['description'],
       scoringMethod: json['scoring_method'] ?? 'raw',
@@ -52,9 +52,9 @@ class Question {
 
   factory Question.fromJson(Map<String, dynamic> json) {
     return Question(
-      id: json['id'],
+      id: (json['id'] as num).toInt(),
       text: json['text'],
-      order: json['order'],
+      order: (json['order'] as num).toInt(),
       options: (json['options'] as List).map((i) => Option.fromJson(i)).toList(),
     );
   }
@@ -75,17 +75,17 @@ class Option {
 
   factory Option.fromJson(Map<String, dynamic> json) {
     return Option(
-      id: json['id'],
+      id: (json['id'] as num).toInt(),
       text: json['text'],
-      value: json['value'],
-      order: json['order'],
+      value: (json['value'] as num).toInt(),
+      order: (json['order'] as num).toInt(),
     );
   }
 }
 
 class ScoringRange {
-  final int minScore;
-  final int maxScore;
+  final double minScore;
+  final double maxScore;
   final String label;
   final String description;
   final String colorHex;
@@ -100,8 +100,8 @@ class ScoringRange {
 
   factory ScoringRange.fromJson(Map<String, dynamic> json) {
     return ScoringRange(
-      minScore: json['min_score'],
-      maxScore: json['max_score'],
+      minScore: (json['min_score'] as num).toDouble(),
+      maxScore: (json['max_score'] as num).toDouble(),
       label: json['label'],
       description: json['description'] ?? '',
       colorHex: json['color_hex'] ?? '4CAF50',
@@ -124,7 +124,7 @@ class UserAssessmentSubscaleResult {
 
   factory UserAssessmentSubscaleResult.fromJson(Map<String, dynamic> json) {
     return UserAssessmentSubscaleResult(
-      id: json['id'],
+      id: (json['id'] as num).toInt(),
       domain: json['domain'],
       score: (json['score'] as num).toDouble(),
       resultLabel: json['result_label'] ?? '',
@@ -155,7 +155,7 @@ class UserAssessmentResult {
 
   factory UserAssessmentResult.fromJson(Map<String, dynamic> json) {
     return UserAssessmentResult(
-      id: json['id'],
+      id: (json['id'] as num).toInt(),
       assessmentTitle: json['assessment_title'] ?? '',
       score: (json['score'] as num).toDouble(),
       resultLabel: json['result_label'] ?? '',
@@ -190,12 +190,12 @@ class UserAssessmentResponse {
 
   factory UserAssessmentResponse.fromJson(Map<String, dynamic> json) {
     return UserAssessmentResponse(
-      id: json['id'],
-      questionId: json['question'],
+      id: (json['id'] as num).toInt(),
+      questionId: json['question'] != null ? (json['question'] as num).toInt() : null,
       questionText: json['question_text'] ?? '',
-      selectedOptionId: json['selected_option'],
+      selectedOptionId: json['selected_option'] != null ? (json['selected_option'] as num).toInt() : null,
       optionText: json['option_text'],
-      value: json['value'],
+      value: json['value'] != null ? (json['value'] as num).toInt() : null,
     );
   }
 }
