@@ -67,17 +67,19 @@ class ApiService {
     Map<String, String> headers,
     String? body,
   ) async {
+    const timeoutDuration = Duration(seconds: 15);
+    
     switch (method.toUpperCase()) {
       case 'POST':
-        return await http.post(uri, headers: headers, body: body);
+        return await http.post(uri, headers: headers, body: body).timeout(timeoutDuration);
       case 'PUT':
-        return await http.put(uri, headers: headers, body: body);
+        return await http.put(uri, headers: headers, body: body).timeout(timeoutDuration);
       case 'PATCH':
-        return await http.patch(uri, headers: headers, body: body);
+        return await http.patch(uri, headers: headers, body: body).timeout(timeoutDuration);
       case 'DELETE':
-        return await http.delete(uri, headers: headers, body: body);
+        return await http.delete(uri, headers: headers, body: body).timeout(timeoutDuration);
       default:
-        return await http.get(uri, headers: headers);
+        return await http.get(uri, headers: headers).timeout(timeoutDuration);
     }
   }
 

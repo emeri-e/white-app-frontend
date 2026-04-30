@@ -131,59 +131,81 @@ class _AuthWrapperState extends State<_AuthWrapper> {
   }
 
   Future<void> _checkAuthAndLoad() async {
-    final token = await TokenStorage.getAccessToken();
+    final startTime = DateTime.now();
+    const minSplashDuration = Duration(milliseconds: 2500);
     
-    if (token == null) {
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, OnboardingScreen.id);
+    // Global safety timeout to prevent hanging on splash
+    final safetyTimeout = Future.delayed(const Duration(seconds: 10)).then((_) {
+      if (!_isReady && mounted) {
+        debugPrint("Safety Timeout Triggered: Initializing app partially.");
+        setState(() {
+          _isAuthChecked = true;
+          _isReady = true;
+        });
       }
-      return;
-    }
+    });
 
     try {
-      // 1. Critical: Get Profile. If this fails, we likely have an auth issue.
-      await ProfileService.getProfile();
-    } catch (e) {
-      debugPrint("Critical Error: Profile fetch failed. Redirecting to Onboarding. Error: $e");
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, OnboardingScreen.id);
+      final token = await TokenStorage.getAccessToken().timeout(const Duration(seconds: 5));
+      
+      if (token == null) {
+        _finishLoading(startTime, minSplashDuration, needsOnboarding: true);
+        return;
       }
-      return;
-    }
 
-    // 2. Secondary: Enrollments and Dashboard. 
-    // We try to get these, but if they fail, we still want to show the Home screen if possible.
-    List<dynamic> enrollments = [];
-    try {
-      enrollments = await RecoveryService.getUserEnrollments();
-      await RecoveryService.getProgressDashboard();
+      try {
+        // 1. Critical: Get Profile.
+        await ProfileService.getProfile();
+      } catch (e) {
+        debugPrint("Critical Error: Profile fetch failed. Redirecting to Onboarding. Error: $e");
+        _finishLoading(startTime, minSplashDuration, needsOnboarding: true);
+        return;
+      }
+
+      // 2. Secondary/Optional data fetches
+      try {
+        final enrollments = await RecoveryService.getUserEnrollments().timeout(const Duration(seconds: 5));
+        await RecoveryService.getProgressDashboard().timeout(const Duration(seconds: 5));
+        
+        // Optional: Secondary data. Awaiting this ensures it's cached before Home screen shows.
+        await Future.wait([
+          RecoveryService.getDailyQuote().catchError((e) => <String, dynamic>{}),
+          ProgressService.getMoodHistory().catchError((e) => <MoodEntry>[]),
+          SupportGroupService.getCurrentSession().catchError((e) => null),
+          SupportGroupService.getGroups().catchError((e) => <SupportGroup>[]),
+          RecoveryService.getDailyLearningSummary().catchError((e) => <String, dynamic>{}),
+          CommunityService().getPosts().catchError((e) => <CommunityPost>[]),
+        ]).timeout(const Duration(seconds: 3)).catchError((e) {
+          debugPrint("Note: Secondary data took too long or failed.");
+          return [];
+        });
+
+        _finishLoading(startTime, minSplashDuration, needsWalkthrough: enrollments.isEmpty);
+      } catch (e) {
+        debugPrint("Warning: Failed to load enrollments/dashboard: $e");
+        _finishLoading(startTime, minSplashDuration);
+      }
     } catch (e) {
-      debugPrint("Warning: Failed to load enrollments/dashboard: $e");
+      debugPrint("Auth Check Failed with Error: $e");
+      _finishLoading(startTime, minSplashDuration, needsOnboarding: true);
+    }
+  }
+
+  void _finishLoading(DateTime startTime, Duration minDuration, {bool needsOnboarding = false, bool needsWalkthrough = false}) async {
+    final elapsed = DateTime.now().difference(startTime);
+    final remaining = minDuration - elapsed;
+
+    if (remaining > Duration.zero) {
+      await Future.delayed(remaining);
     }
 
-    // 3. Optional: Secondary data to prevent flashes. These should NOT block app entry.
-    try {
-      await Future.wait([
-        RecoveryService.getDailyQuote().catchError((e) => <String, dynamic>{}),
-        ProgressService.getMoodHistory().catchError((e) => <MoodEntry>[]),
-        SupportGroupService.getCurrentSession().catchError((e) => null),
-        SupportGroupService.getGroups().catchError((e) => <SupportGroup>[]),
-        RecoveryService.getDailyLearningSummary().catchError((e) => <String, dynamic>{}),
-        CommunityService().getPosts().catchError((e) => <CommunityPost>[]),
-      ]);
-    } catch (e) {
-      debugPrint("Warning: Some secondary data failed. Moving on. Error: $e");
-    }
-    
-    // 4. Guaranteed animation visibility
-    await Future.delayed(const Duration(milliseconds: 3000));
+    if (!mounted) return;
 
-    if (mounted) {
+    if (needsOnboarding) {
+      Navigator.pushReplacementNamed(context, OnboardingScreen.id);
+    } else {
       setState(() {
-        // Only show walkthrough if they have absolutely NO enrollments.
-        // For existing users who just haven't enrolled in a specific program, 
-        // they should still go to Home if they've seen the app before.
-        _needsWalkthrough = enrollments.isEmpty;
+        _needsWalkthrough = needsWalkthrough;
         _isAuthChecked = true;
         _isReady = true;
       });
