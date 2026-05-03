@@ -93,6 +93,67 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _showEmergencyBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Emergency Tools',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.outfit(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.redAccent,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Select a tool to help you stay grounded right now.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.outfit(fontSize: 14, color: Colors.white70),
+                ),
+                const SizedBox(height: 24),
+                _buildEmergencyToolTile(context, 'Breathing', Icons.air, 'breathing_screen', Colors.lightBlueAccent),
+                _buildEmergencyToolTile(context, '5-4-3-2-1 Grounding', Icons.visibility, 'grounding_screen', Colors.tealAccent),
+                const Divider(color: Colors.white24, height: 32),
+                _buildEmergencyToolTile(context, 'Urge Surfing', Icons.waves, 'urge_surfing_screen', Colors.indigoAccent),
+                _buildEmergencyToolTile(context, 'Flash Cards', Icons.style, 'flash_cards_screen', Colors.pinkAccent),
+                _buildEmergencyToolTile(context, 'Soundscape', Icons.headphones, 'soundscape_screen', Colors.purpleAccent),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmergencyToolTile(BuildContext context, String title, IconData icon, String route, Color color) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+        child: Icon(icon, color: color),
+      ),
+      title: Text(title, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold)),
+      trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
+      onTap: () {
+        Navigator.pop(context); // Close bottom sheet
+        Navigator.pushNamed(context, route);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // If we are not on Home tab, we treat it as "Dashboard" view (progress 1.0)
@@ -117,6 +178,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showEmergencyBottomSheet(context),
+        backgroundColor: Colors.redAccent.withOpacity(0.9),
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: const Icon(Icons.warning_rounded, color: Colors.white, size: 28),
       ),
       bottomNavigationBar: AnimatedSlide(
         duration: const Duration(milliseconds: 300),
@@ -587,8 +655,79 @@ class _HomeTabState extends State<HomeTab> {
               children: [
                 const SizedBox(height: 30),
 
+                // Tools Hub Access
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 24),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF6366F1).withOpacity(0.3),
+                        blurRadius: 15,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () {
+                        Navigator.pushNamed(context, 'tools_hub_screen');
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(20.0),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.favorite, color: Colors.white, size: 28),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Immediate Help Tools',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Breathing, grounding, & coping tools',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 14,
+                                      color: Colors.white.withOpacity(0.9),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
                 // Challenges Carousel (Active & Unlocked)
                 if ((_dashboardData?['active_challenges'] as List? ?? []).isNotEmpty || 
+
                     (_dashboardData?['available_challenges'] as List? ?? []).isNotEmpty) ...[
                   SizedBox(
                     height: 220,

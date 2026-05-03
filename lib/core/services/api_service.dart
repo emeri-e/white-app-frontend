@@ -225,4 +225,22 @@ class ApiService {
       throw Exception('Failed to update profile: ${response.body}');
     }
   }
+
+  // --- Multipart Support ---
+
+  static Future<http.MultipartRequest> createMultipartRequest(String method, String url) async {
+    final accessToken = await TokenStorage.getAccessToken();
+    final request = http.MultipartRequest(method.toUpperCase(), Uri.parse(url));
+    request.headers['Authorization'] = 'Bearer $accessToken';
+    return request;
+  }
+
+  static Future<void> addFileToMultipart(http.MultipartRequest request, String fieldName, String filePath) async {
+    request.files.add(await http.MultipartFile.fromPath(fieldName, filePath));
+  }
+
+  static Future<http.Response> sendMultipartRequest(http.MultipartRequest request) async {
+    final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
+    return await http.Response.fromStream(streamedResponse);
+  }
 }

@@ -11,6 +11,13 @@ import 'package:whiteapp/features/recovery/screens/progress_dashboard_screen.dar
 import 'package:whiteapp/features/onboarding/screens/walkthrough_screen.dart';
 import 'package:whiteapp/features/feedback/screens/feedback_screen.dart';
 import 'package:whiteapp/features/profile/screens/public_profile_screen.dart';
+import 'package:whiteapp/features/tools/screens/tools_hub_screen.dart';
+import 'package:whiteapp/features/tools/screens/breathing_screen.dart';
+import 'package:whiteapp/features/tools/screens/grounding_screen.dart';
+import 'package:whiteapp/features/tools/screens/urge_surfing_screen.dart';
+import 'package:whiteapp/features/tools/screens/flash_cards_screen.dart';
+import 'package:whiteapp/features/tools/screens/manage_decks_screen.dart';
+import 'package:whiteapp/features/tools/screens/soundscape_screen.dart';
 
 import 'package:provider/provider.dart';
 import 'package:whiteapp/features/community/controllers/community_controller.dart';
@@ -103,6 +110,13 @@ class MyApp extends StatelessWidget {
         ProgressDashboardScreen.id: (context) => const ProgressDashboardScreen(),
         WalkthroughScreen.id: (context) => const WalkthroughScreen(),
         FeedbackScreen.id: (context) => const FeedbackScreen(),
+        ToolsHubScreen.id: (context) => const ToolsHubScreen(),
+        BreathingScreen.id: (context) => const BreathingScreen(),
+        GroundingScreen.id: (context) => const GroundingScreen(),
+        UrgeSurfingScreen.id: (context) => const UrgeSurfingScreen(),
+        FlashCardsScreen.id: (context) => const FlashCardsScreen(),
+        ManageDecksScreen.id: (context) => const ManageDecksScreen(),
+        SoundscapeScreen.id: (context) => const SoundscapeScreen(),
         '/public-profile': (context) {
           final userId = ModalRoute.of(context)!.settings.arguments as int;
           return PublicProfileScreen(userId: userId);
