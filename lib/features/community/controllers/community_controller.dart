@@ -21,6 +21,7 @@ class CommunityController extends ChangeNotifier {
   String? _assignedLevelTitle;
   List<Map<String, dynamic>> _myGroupChallenges = [];
   bool _showOriginalLanguage = false;
+  bool _onlySos = false;
 
   List<CommunityPost> get posts => _posts;
   List<CommunityPost> get recoveryStories => _recoveryStories;
@@ -36,6 +37,7 @@ class CommunityController extends ChangeNotifier {
   int? get assignedChallengeId => _myGroupChallenges.isNotEmpty ? _myGroupChallenges.first['id'] : null;
   String? get primaryChallengeTitle => _myGroupChallenges.isNotEmpty ? _myGroupChallenges.first['title'] : null;
   bool get showOriginalLanguage => _showOriginalLanguage;
+  bool get onlySos => _onlySos;
 
   List<dynamic> _levels = [];
   List<dynamic> _challenges = [];
@@ -44,9 +46,18 @@ class CommunityController extends ChangeNotifier {
   List<dynamic> get challenges => _challenges;
 
   /// Fetch posts with optional filters. If no filters are provided, uses the currently selected ones.
-  Future<void> fetchPosts({int? challengeDay, int? levelId, int? challengeId, bool useDefaults = true}) async {
+  Future<void> fetchPosts({int? challengeDay, int? levelId, int? challengeId, bool? onlySos, bool useDefaults = true}) async {
     _isLoading = true;
     _error = null;
+    
+    if (onlySos != null) {
+      _onlySos = onlySos;
+      if (onlySos) {
+        _selectedLevelId = null;
+        _selectedChallengeId = null;
+        _selectedChallengeDay = null;
+      }
+    }
     
     // Update internal state if explicit values provided
     if (challengeDay != null) _selectedChallengeDay = challengeDay;
@@ -64,17 +75,42 @@ class CommunityController extends ChangeNotifier {
         _selectedLevelId = null;
         _selectedChallengeId = null;
         _selectedChallengeDay = null;
+        _onlySos = false;
+    }
+
+    if (levelId != null || challengeId != null || challengeDay != null) {
+      _onlySos = false;
     }
 
     notifyListeners();
 
     try {
-      final fetchedPosts = await _communityService.getPosts(
-        challengeDay: _selectedChallengeDay,
-        levelId: _selectedLevelId,
-        challengeId: _selectedChallengeId,
-      );
-      _posts = fetchedPosts;
+      if (_onlySos) {
+        final sosPosts = await _communityService.getSOSPosts();
+        _posts = sosPosts;
+      } else {
+        final fetchedPosts = await _communityService.getPosts(
+          challengeDay: _selectedChallengeDay,
+          levelId: _selectedLevelId,
+          challengeId: _selectedChallengeId,
+        );
+        
+        // If we are in the general feed, also fetch SOS posts and prioritize them
+        if (_selectedChallengeDay == null && _selectedLevelId == null && _selectedChallengeId == null) {
+          try {
+            final sosPosts = await _communityService.getSOSPosts();
+            // Filter out duplicates if any
+            final sosIds = sosPosts.map((p) => p.id).toSet();
+            _posts = [...sosPosts, ...fetchedPosts.where((p) => !sosIds.contains(p.id))];
+          } catch (e) {
+            debugPrint("Error fetching SOS posts: $e");
+            _posts = fetchedPosts;
+          }
+        } else {
+          _posts = fetchedPosts;
+        }
+      }
+      
       _isLoading = false;
       notifyListeners();
     } catch (e) {

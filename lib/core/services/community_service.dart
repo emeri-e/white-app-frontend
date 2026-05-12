@@ -44,6 +44,18 @@ class CommunityService {
     }
   }
 
+  /// Get active SOS posts
+  Future<List<CommunityPost>> getSOSPosts() async {
+    final response = await ApiService.authorizedRequest('${Env.apiBase}/emergency/sos-posts/');
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((json) => CommunityPost.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load SOS posts: ${response.body}');
+    }
+  }
+
   /// Get pending posts for moderation (Staff only)
   Future<List<CommunityPost>> getPendingPosts() async {
     final response = await ApiService.authorizedRequest('$_baseUrl/posts/?moderation_status=pending');

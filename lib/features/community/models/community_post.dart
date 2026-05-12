@@ -30,6 +30,10 @@ class CommunityPost {
   final Map<String, dynamic>? level;
   final Map<String, dynamic>? challenge;
   final bool isTargetedForViewer;
+  final bool isSos;
+  final DateTime? sosCreatedAt;
+  final DateTime? sosCountdownEndsAt;
+  final bool isSpeedBonusActive;
 
   CommunityPost({
     required this.id,
@@ -62,6 +66,10 @@ class CommunityPost {
     this.level,
     this.challenge,
     required this.isTargetedForViewer,
+    required this.isSos,
+    this.sosCreatedAt,
+    this.sosCountdownEndsAt,
+    required this.isSpeedBonusActive,
   });
 
   factory CommunityPost.fromJson(Map<String, dynamic> json) {
@@ -96,6 +104,10 @@ class CommunityPost {
       level: json['level'] as Map<String, dynamic>?,
       challenge: json['challenge'] as Map<String, dynamic>?,
       isTargetedForViewer: json['is_targeted_for_viewer'] as bool? ?? false,
+      isSos: json['is_sos'] as bool? ?? false,
+      sosCreatedAt: json['sos_created_at'] != null ? DateTime.parse(json['sos_created_at'] as String) : null,
+      sosCountdownEndsAt: json['sos_countdown_ends_at'] != null ? DateTime.parse(json['sos_countdown_ends_at'] as String) : null,
+      isSpeedBonusActive: json['is_speed_bonus_active'] as bool? ?? false,
     );
   }
 

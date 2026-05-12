@@ -18,6 +18,9 @@ import 'package:whiteapp/features/tools/screens/urge_surfing_screen.dart';
 import 'package:whiteapp/features/tools/screens/flash_cards_screen.dart';
 import 'package:whiteapp/features/tools/screens/manage_decks_screen.dart';
 import 'package:whiteapp/features/tools/screens/soundscape_screen.dart';
+import 'package:whiteapp/features/emergency/screens/sos_post_screen.dart';
+import 'package:whiteapp/features/emergency/screens/specialist_directory_screen.dart';
+import 'package:whiteapp/features/emergency/screens/supervisor_chat_screen.dart';
 
 import 'package:provider/provider.dart';
 import 'package:whiteapp/features/community/controllers/community_controller.dart';
@@ -121,6 +124,9 @@ class MyApp extends StatelessWidget {
           final userId = ModalRoute.of(context)!.settings.arguments as int;
           return PublicProfileScreen(userId: userId);
         },
+        'sos_post_screen': (context) => const SOSPostScreen(),
+        'specialist_directory_screen': (context) => const SpecialistDirectoryScreen(),
+        'supervisor_chat_screen': (context) => const SupervisorChatScreen(),
       },
     );
   }

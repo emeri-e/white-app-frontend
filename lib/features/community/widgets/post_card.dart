@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:whiteapp/features/community/controllers/community_controller.dart';
@@ -19,6 +20,8 @@ class PostCard extends StatefulWidget {
 class _PostCardState extends State<PostCard> {
   bool _showingOriginal = false;
   String? _originalText;
+  Timer? _sosTimer;
+  Duration _remainingTime = Duration.zero;
 
   Future<void> _toggleOriginalLanguage() async {
     if (_showingOriginal) {
@@ -95,6 +98,42 @@ class _PostCardState extends State<PostCard> {
     }
   }
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.post.isSos && widget.post.sosCountdownEndsAt != null) {
+      _startSosTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sosTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startSosTimer() {
+    _sosTimer?.cancel();
+    _updateRemainingTime();
+    _sosTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        _updateRemainingTime();
+      }
+    });
+  }
+
+  void _updateRemainingTime() {
+    if (widget.post.sosCountdownEndsAt == null) return;
+    final now = DateTime.now();
+    final remaining = widget.post.sosCountdownEndsAt!.difference(now);
+    if (remaining.isNegative) {
+      _sosTimer?.cancel();
+      setState(() => _remainingTime = Duration.zero);
+    } else {
+      setState(() => _remainingTime = remaining);
+    }
+  }
+
   Future<void> _likePost() async {
     final controller = Provider.of<CommunityController>(context, listen: false);
     await controller.reactToPost(widget.post.id, 'like');
@@ -111,13 +150,23 @@ class _PostCardState extends State<PostCard> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: widget.post.isSos ? Colors.orangeAccent.withOpacity(0.08) : Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: widget.post.moderationStatus == 'pending' 
-              ? Colors.orangeAccent.withOpacity(0.3) 
-              : (widget.post.moderationStatus == 'rejected' ? Colors.redAccent.withOpacity(0.3) : Colors.white10),
+          color: widget.post.isSos 
+              ? Colors.orangeAccent.withOpacity(0.5)
+              : (widget.post.moderationStatus == 'pending' 
+                  ? Colors.orangeAccent.withOpacity(0.3) 
+                  : (widget.post.moderationStatus == 'rejected' ? Colors.redAccent.withOpacity(0.3) : Colors.white10)),
+          width: widget.post.isSos ? 2 : 1,
         ),
+        boxShadow: widget.post.isSos ? [
+          BoxShadow(
+            color: Colors.orangeAccent.withOpacity(0.1),
+            blurRadius: 10,
+            spreadRadius: 2,
+          )
+        ] : null,
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
@@ -179,10 +228,66 @@ class _PostCardState extends State<PostCard> {
                             ),
                           ],
                         ),
+                        if (widget.post.isSos) ...[
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 12),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'SOS REQUEST',
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                   const Spacer(),
+                  if (widget.post.isSos && _remainingTime.inSeconds > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.orangeAccent.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            'BONUS ENDS IN',
+                            style: GoogleFonts.outfit(
+                              color: Colors.orangeAccent,
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            '${_remainingTime.inMinutes}:${(_remainingTime.inSeconds % 60).toString().padLeft(2, '0')}',
+                            style: GoogleFonts.outfit(
+                              color: Colors.orangeAccent,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(width: 8),
                   _buildMenuButton(),
                 ],
               ),

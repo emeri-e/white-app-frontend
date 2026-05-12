@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:whiteapp/features/community/controllers/community_controller.dart';
 import 'package:whiteapp/features/community/models/community_post.dart';
 import 'package:whiteapp/features/community/models/post_comment.dart';
@@ -57,9 +58,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _commentController.clear();
       _loadComments();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Comment added')),
-        );
+        if (widget.post.isSos) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.orangeAccent,
+              behavior: SnackBarBehavior.floating,
+              content: Row(
+                children: [
+                  const Icon(Icons.stars_rounded, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'SOS Reward Earned! Check your wallet for Gold bonus.',
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Comment added')),
+          );
+        }
       }
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

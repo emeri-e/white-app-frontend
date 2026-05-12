@@ -90,6 +90,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       reactionsCount: 0,
       levelId: controller.assignedLevelId,
       challengeId: controller.assignedChallengeId,
+      isSos: false,
+      isSpeedBonusActive: false,
       isTargetedForViewer: false,
     );
 

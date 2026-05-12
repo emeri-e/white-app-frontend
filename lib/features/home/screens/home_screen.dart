@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:whiteapp/features/emergency/widgets/sos_overlay.dart';
 import 'package:whiteapp/core/widgets/abstract_background.dart';
 import 'package:whiteapp/features/profile/services/profile_service.dart';
 import 'package:whiteapp/features/profile/models/user_profile.dart';
@@ -93,67 +94,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _showEmergencyBottomSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E293B),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Emergency Tools',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.outfit(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.redAccent,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Select a tool to help you stay grounded right now.',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.outfit(fontSize: 14, color: Colors.white70),
-                ),
-                const SizedBox(height: 24),
-                _buildEmergencyToolTile(context, 'Breathing', Icons.air, 'breathing_screen', Colors.lightBlueAccent),
-                _buildEmergencyToolTile(context, '5-4-3-2-1 Grounding', Icons.visibility, 'grounding_screen', Colors.tealAccent),
-                const Divider(color: Colors.white24, height: 32),
-                _buildEmergencyToolTile(context, 'Urge Surfing', Icons.waves, 'urge_surfing_screen', Colors.indigoAccent),
-                _buildEmergencyToolTile(context, 'Flash Cards', Icons.style, 'flash_cards_screen', Colors.pinkAccent),
-                _buildEmergencyToolTile(context, 'Soundscape', Icons.headphones, 'soundscape_screen', Colors.purpleAccent),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildEmergencyToolTile(BuildContext context, String title, IconData icon, String route, Color color) {
-    return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
-        child: Icon(icon, color: color),
-      ),
-      title: Text(title, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold)),
-      trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
-      onTap: () {
-        Navigator.pop(context); // Close bottom sheet
-        Navigator.pushNamed(context, route);
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     // If we are not on Home tab, we treat it as "Dashboard" view (progress 1.0)
@@ -180,7 +120,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showEmergencyBottomSheet(context),
+        onPressed: () {
+          Navigator.push(
+            context,
+            PageRouteBuilder(
+              opaque: false,
+              pageBuilder: (context, _, __) => SOSOverlay(),
+            ),
+          );
+        },
         backgroundColor: Colors.redAccent.withOpacity(0.9),
         elevation: 8,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

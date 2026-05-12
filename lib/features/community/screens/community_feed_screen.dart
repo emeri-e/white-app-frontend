@@ -225,8 +225,14 @@ class _CommunityFeedScreenState extends State<CommunityFeedScreen> with SingleTi
             child: Row(
               children: [
                 _buildFilterChip(
+                  label: '🚨 SOS Requests',
+                  selected: controller.onlySos,
+                  onSelected: (val) => _controller.fetchPosts(onlySos: true),
+                  color: Colors.redAccent,
+                ),
+                _buildFilterChip(
                   label: 'All',
-                  selected: controller.selectedLevelId == null && controller.selectedChallengeId == null,
+                  selected: !controller.onlySos && controller.selectedLevelId == null && controller.selectedChallengeId == null,
                   onSelected: (val) => _controller.fetchPosts(useDefaults: false),
                 ),
                 
