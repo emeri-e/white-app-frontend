@@ -131,7 +131,8 @@ class WhiteAccessibilityService : AccessibilityService() {
         }
     }
     private fun triggerScreenScan(packageName: String) {
-        if (whitelistedApps.contains(packageName)) return
+        // TEMPORARILY DISABLED FOR LIGHTWEIGHT MODE
+        return
         if (BlockingOverlay.isShowing()) return
         if (isScanInProgress) return
 

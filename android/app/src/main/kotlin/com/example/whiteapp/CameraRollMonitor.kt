@@ -108,80 +108,8 @@ object CameraRollMonitor {
     }
 
     private fun scanImageUri(context: Context, uri: Uri) {
-        Thread {
-            try {
-                // Read image from stream
-                val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-                if (inputStream == null) {
-                    Log.w("CameraRollMonitor", "Unable to open input stream for Uri: $uri")
-                    return@Thread
-                }
-
-                // Parse image dimensions and size
-                val options = BitmapFactory.Options().apply {
-                    inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
-                }
-                val bitmap = BitmapFactory.decodeStream(inputStream, null, options)
-                inputStream.close()
-
-                if (bitmap == null) {
-                    Log.w("CameraRollMonitor", "Decoded bitmap was null for Uri: $uri")
-                    return@Thread
-                }
-
-                val classifier = NudeNetClassifier(context)
-                val detections = classifier.classify(bitmap)
-                bitmap.recycle() // free native memory immediately
-
-                if (detections.isEmpty()) {
-                    return@Thread
-                }
-
-                var shouldBlock = false
-                var triggeringLabel = ""
-                var maxConfidence = 0.0f
-
-                for (detection in detections) {
-                    val label = detection.label.uppercase()
-                    val conf = detection.confidence
-
-                    val threshold = when (label) {
-                        "GENITALIA_EXPOSED", "FEMALE_GENITALIA_EXPOSED", "MALE_GENITALIA_EXPOSED", "ANUS_EXPOSED" -> 0.65f
-                        "FEMALE_BREAST_EXPOSED" -> 0.75f
-                        "BUTTOCKS_EXPOSED" -> 0.70f
-                        else -> 0.85f
-                    }
-
-                    if (conf >= threshold) {
-                        shouldBlock = true
-                        if (conf > maxConfidence) {
-                            maxConfidence = conf
-                            triggeringLabel = label
-                        }
-                    }
-                }
-
-                if (shouldBlock) {
-                    Log.w("CameraRollMonitor", "EXPLICIT PHOTO DETECTED IN CAMERA ROLL: $uri ($triggeringLabel)")
-
-                    // Log block event
-                    BlockEventLogger.logEvent(
-                        context = context,
-                        blockType = "camera_roll",
-                        appName = "CameraRoll",
-                        domain = uri.lastPathSegment ?: "unknown",
-                        url = uri.toString(),
-                        classLabel = triggeringLabel,
-                        confidence = maxConfidence.toDouble()
-                    )
-
-                    // Execute media purging
-                    purgeMediaFile(context, uri)
-                }
-            } catch (e: Exception) {
-                Log.e("CameraRollMonitor", "Error scanning camera roll image: ${e.message}")
-            }
-        }.start()
+        // TEMPORARILY DISABLED FOR LIGHTWEIGHT MODE
+        return
     }
 
     private fun purgeMediaFile(context: Context, uri: Uri) {
