@@ -3,6 +3,7 @@ import 'package:whiteapp/core/widgets/abstract_background.dart';
 import 'package:whiteapp/core/widgets/glass_text_field.dart';
 import 'package:whiteapp/features/home/screens/home_screen.dart';
 import 'package:whiteapp/features/recovery/services/recovery_service.dart';
+import 'package:whiteapp/features/vpn/screens/filtering_setup_screen.dart';
 import 'package:whiteapp/core/services/api_service.dart';
 
 class WalkthroughScreen extends StatefulWidget {
@@ -327,7 +328,7 @@ class _WalkthroughScreenState extends State<WalkthroughScreen> {
         // Let's assume I'll add it to RecoveryService.
         await RecoveryService.enrollInProgram(_selectedProgramId!);
         
-        Navigator.pushReplacementNamed(context, HomeScreen.id);
+        Navigator.pushReplacementNamed(context, FilteringSetupScreen.id);
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to enroll: $e')),

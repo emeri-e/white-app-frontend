@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:whiteapp/features/home/screens/home_screen.dart';
+import 'package:whiteapp/features/vpn/screens/filtering_setup_screen.dart';
+import 'package:whiteapp/features/vpn/screens/vpn_status_screen.dart';
 import 'package:whiteapp/features/home/screens/welcome.dart';
 import 'package:whiteapp/features/auth/screens/login_screen.dart';
 import 'package:whiteapp/features/auth/screens/signup_screen.dart';
@@ -27,6 +31,9 @@ import 'package:whiteapp/features/community/controllers/community_controller.dar
 import 'package:whiteapp/core/services/community_service.dart';
 import 'package:whiteapp/core/services/token_storage.dart';
 import 'package:whiteapp/features/recovery/services/recovery_service.dart';
+import 'package:whiteapp/features/buddy/services/buddy_service.dart';
+import 'package:whiteapp/features/ai/services/ai_model_updater.dart';
+import 'package:whiteapp/features/ai/services/block_reporter_service.dart';
 import 'firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:whiteapp/core/widgets/splash_animation.dart';
@@ -36,6 +43,10 @@ import 'package:whiteapp/features/support_groups/services/support_group_service.
 import 'package:whiteapp/features/progress/models/mood_entry.dart';
 import 'package:whiteapp/features/support_groups/models/support_group.dart';
 import 'package:whiteapp/features/community/models/community_post.dart';
+import 'package:whiteapp/features/buddy/screens/buddy_dashboard_screen.dart';
+import 'package:whiteapp/features/buddy/screens/buddy_status_screen.dart';
+import 'package:whiteapp/features/buddy/screens/buddy_invite_screen.dart';
+import 'package:whiteapp/features/buddy/screens/buddy_accept_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -112,6 +123,8 @@ class MyApp extends StatelessWidget {
         ChallengeListScreen.id: (context) => const ChallengeListScreen(),
         ProgressDashboardScreen.id: (context) => const ProgressDashboardScreen(),
         WalkthroughScreen.id: (context) => const WalkthroughScreen(),
+        FilteringSetupScreen.id: (context) => const FilteringSetupScreen(),
+        VpnStatusScreen.id: (context) => const VpnStatusScreen(),
         FeedbackScreen.id: (context) => const FeedbackScreen(),
         ToolsHubScreen.id: (context) => const ToolsHubScreen(),
         BreathingScreen.id: (context) => const BreathingScreen(),
@@ -127,6 +140,13 @@ class MyApp extends StatelessWidget {
         'sos_post_screen': (context) => const SOSPostScreen(),
         'specialist_directory_screen': (context) => const SpecialistDirectoryScreen(),
         'supervisor_chat_screen': (context) => const SupervisorChatScreen(),
+        'buddy_dashboard': (context) => const BuddyDashboardScreen(),
+        BuddyStatusScreen.id: (context) => const BuddyStatusScreen(),
+        BuddyInviteScreen.id: (context) => const BuddyInviteScreen(),
+        BuddyAcceptScreen.id: (context) {
+          final args = ModalRoute.of(context)!.settings.arguments as String?;
+          return BuddyAcceptScreen(initialInviteCode: args);
+        },
       },
     );
   }
@@ -143,11 +163,58 @@ class _AuthWrapperState extends State<_AuthWrapper> {
   bool _isReady = false;
   bool _isAuthChecked = false;
   bool _needsWalkthrough = false;
+  static const _platform = MethodChannel('com.whiteapp/vpn');
 
   @override
   void initState() {
     super.initState();
     _checkAuthAndLoad();
+    _initDeepLinking();
+  }
+
+  void _initDeepLinking() {
+    _platform.setMethodCallHandler((call) async {
+      if (call.method == 'onDeepLink') {
+        final String? link = call.arguments as String?;
+        if (link != null) {
+          _handleDeepLink(link);
+        }
+      }
+    });
+
+    // Check for cold-start deep link
+    Future.delayed(const Duration(milliseconds: 1200), () async {
+      try {
+        final String? coldLink = await _platform.invokeMethod<String>('getPendingDeepLink');
+        if (coldLink != null) {
+          _handleDeepLink(coldLink);
+        }
+      } catch (e) {
+        debugPrint("Error fetching cold deep link: $e");
+      }
+    });
+  }
+
+  void _handleDeepLink(String url) {
+    debugPrint("Incoming Deep Link captured: $url");
+    try {
+      final uri = Uri.parse(url);
+      final segments = uri.pathSegments;
+      if (segments.contains('accept')) {
+        final index = segments.indexOf('accept');
+        if (index + 1 < segments.length) {
+          final code = segments[index + 1];
+          // Navigate directly to BuddyAcceptScreen
+          Navigator.pushNamed(
+            context,
+            BuddyAcceptScreen.id,
+            arguments: code,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("Failed to process deep link URL: $e");
+    }
   }
 
   Future<void> _checkAuthAndLoad() async {
@@ -176,9 +243,19 @@ class _AuthWrapperState extends State<_AuthWrapper> {
       try {
         // 1. Critical: Get Profile.
         await ProfileService.getProfile();
+
+        // Check if this is a buddy account
+        try {
+          final isBuddy = await BuddyService.getBuddyDashboard().then((_) => true).catchError((_) => false);
+          if (isBuddy) {
+            _finishLoading(startTime, minSplashDuration, isBuddy: true);
+            return;
+          }
+        } catch (_) {}
       } catch (e) {
-        debugPrint("Critical Error: Profile fetch failed. Redirecting to Onboarding. Error: $e");
-        _finishLoading(startTime, minSplashDuration, needsOnboarding: true);
+        debugPrint("Warning: Profile fetch failed, but keeping user logged in: $e");
+        // Proceed to home/dashboard and do not force onboarding on network failures!
+        _finishLoading(startTime, minSplashDuration, needsOnboarding: false);
         return;
       }
 
@@ -211,7 +288,7 @@ class _AuthWrapperState extends State<_AuthWrapper> {
     }
   }
 
-  void _finishLoading(DateTime startTime, Duration minDuration, {bool needsOnboarding = false, bool needsWalkthrough = false}) async {
+  void _finishLoading(DateTime startTime, Duration minDuration, {bool needsOnboarding = false, bool needsWalkthrough = false, bool isBuddy = false}) async {
     final elapsed = DateTime.now().difference(startTime);
     final remaining = minDuration - elapsed;
 
@@ -223,7 +300,23 @@ class _AuthWrapperState extends State<_AuthWrapper> {
 
     if (needsOnboarding) {
       Navigator.pushReplacementNamed(context, OnboardingScreen.id);
+    } else if (isBuddy) {
+      Navigator.pushReplacementNamed(context, 'buddy_dashboard');
     } else {
+      // Check if user has completed the filtering setup wizard
+      final prefs = await SharedPreferences.getInstance();
+      final setupCompleted = prefs.getBool('filtering_setup_completed') ?? false;
+
+      if (!setupCompleted) {
+        // Enforce re-entry gate: Redirect incomplete users to filtering setup screen
+        Navigator.pushReplacementNamed(context, FilteringSetupScreen.id);
+        return;
+      }
+
+      // Start background services & OTA checks for authenticated users
+      BlockReporterService.instance.startPeriodicReporting();
+      AIModelUpdater.instance.checkForUpdates();
+      
       setState(() {
         _needsWalkthrough = needsWalkthrough;
         _isAuthChecked = true;

@@ -3,6 +3,8 @@ import 'package:whiteapp/core/constants/env.dart';
 import 'package:whiteapp/core/services/api_service.dart';
 import 'package:whiteapp/features/profile/models/user_profile.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class ProfileService {
   static const String _baseUrl = '${Env.apiBase}/accounts/profile/';
 
@@ -13,6 +15,12 @@ class ProfileService {
     
     if (response.statusCode == 200) {
       cachedProfile = UserProfile.fromJson(json.decode(response.body));
+      
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_email', cachedProfile!.user.email);
+      } catch (_) {}
+
       return cachedProfile!;
     } else {
       throw Exception('Failed to load profile: ${response.body}');

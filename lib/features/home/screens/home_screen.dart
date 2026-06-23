@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:whiteapp/features/emergency/widgets/sos_overlay.dart';
+import 'package:whiteapp/features/vpn/screens/filtering_setup_screen.dart';
 import 'package:whiteapp/core/widgets/abstract_background.dart';
 import 'package:whiteapp/features/profile/services/profile_service.dart';
 import 'package:whiteapp/features/profile/models/user_profile.dart';
@@ -38,8 +40,13 @@ import 'package:whiteapp/features/community/models/community_post.dart';
 import 'package:whiteapp/core/services/community_service.dart';
 import 'package:whiteapp/features/home/widgets/home_widgets.dart';
 import 'package:whiteapp/features/progress/services/progress_service.dart';
+import 'package:whiteapp/features/vpn/widgets/vpn_status_card.dart';
 import 'package:whiteapp/features/progress/models/mood_entry.dart';
 import 'package:whiteapp/features/progress/models/relapse_entry.dart';
+import 'package:whiteapp/features/buddy/models/buddy_pairing.dart';
+import 'package:whiteapp/features/buddy/services/buddy_service.dart';
+import 'package:whiteapp/features/buddy/screens/buddy_invite_screen.dart';
+import 'package:whiteapp/features/buddy/screens/buddy_status_screen.dart';
 
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
@@ -188,6 +195,8 @@ class _HomeTabState extends State<HomeTab> {
   CommunityPost? _latestPost = (CommunityService.cachedPosts ?? []).isNotEmpty ? CommunityService.cachedPosts!.first : null;
   SupportGroup? _upcomingSessionGroup;
   Map<String, dynamic>? _currentSession = SupportGroupService.cachedCurrentSession;
+  BuddyPairing? _buddyPairing;
+  bool _setupCompleted = true;
   
   Duration _cleanDuration = Duration.zero;
   Timer? _streakTimer;
@@ -264,6 +273,13 @@ class _HomeTabState extends State<HomeTab> {
         debugPrint("Error loading current session: $e");
       }
 
+      BuddyPairing? buddyPairing;
+      try {
+        buddyPairing = await BuddyService.getPairingStatus();
+      } catch (e) {
+        debugPrint("Error loading buddy pairing status in home: $e");
+      }
+
       SupportGroup? upcomingSession;
       try {
         final groups = await SupportGroupService.getGroups();
@@ -289,6 +305,9 @@ class _HomeTabState extends State<HomeTab> {
         debugPrint("Error loading daily content: $e");
       }
       
+      final prefs = await SharedPreferences.getInstance();
+      final setupCompleted = prefs.getBool('filtering_setup_completed') ?? false;
+      
       if (mounted) {
         final communityController = Provider.of<CommunityController>(context, listen: false);
         await communityController.fetchProgramDetails();
@@ -302,6 +321,8 @@ class _HomeTabState extends State<HomeTab> {
           _dailyContent = dailyContent;
           _upcomingSessionGroup = upcomingSession;
           _currentSession = currentSession;
+          _buddyPairing = buddyPairing;
+          _setupCompleted = setupCompleted;
           
           // Determine current group for pulse
           final statusType = _dashboardData?['current_status_type'];
@@ -547,6 +568,213 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
+  Widget _buildBuddyStatusCard() {
+    final pairing = _buddyPairing;
+    
+    if (pairing != null && pairing.status == 'active') {
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 24),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.greenAccent.withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () {
+              Navigator.pushNamed(context, BuddyStatusScreen.id);
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.handshake_rounded, color: Colors.greenAccent, size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Accountability Buddy Active',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          pairing.buddyName ?? pairing.buddyEmail ?? 'Protected Session',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white38, size: 16),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    } else if (pairing != null && pairing.status == 'pending') {
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 24),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.amberAccent.withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () {
+              Navigator.pushNamed(context, BuddyInviteScreen.id);
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amberAccent.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.hourglass_empty_rounded, color: Colors.amberAccent, size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Buddy Invite Pending',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Waiting for accept. Code: ${pairing.inviteCode}',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white38, size: 16),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    } else {
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 24),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF3B82F6), Color(0xFF1D4ED8)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF3B82F6).withOpacity(0.3),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () {
+              Navigator.pushNamed(context, BuddyInviteScreen.id);
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.handshake_rounded, color: Colors.white, size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Setup Accountability Buddy',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Link with a trusted friend to shield your recovery.',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
   Widget _buildDashboardView() {
     final currentStatus = _dashboardData?['current_status'] ?? 'Loading...';
     final statusType = _dashboardData?['current_status_type'] ?? 'unknown';
@@ -602,6 +830,79 @@ class _HomeTabState extends State<HomeTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 30),
+                if (!_setupCompleted) ...[
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 24),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFEC4899), Color(0xFF6366F1)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFEC4899).withOpacity(0.3),
+                          blurRadius: 15,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () {
+                          Navigator.pushNamed(context, FilteringSetupScreen.id).then((_) => _loadData());
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(20.0),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.shield_outlined, color: Colors.white, size: 28),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Mandatory Setup Incomplete',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Activate real-time AI & shield filtering now.',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 14,
+                                        color: Colors.white.withOpacity(0.9),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                const VpnStatusCard(),
+                const SizedBox(height: 24),
+                _buildBuddyStatusCard(),
 
                 // Tools Hub Access
                 Container(

@@ -47,3 +47,22 @@ app.*.map.json
 # Firebase
 google-services.json
 **/google-services.json
+
+# Gradle/Android build outputs
+/android/build/
+/android/app/build/
+*.tflite
+*.mlmodel
+*.crt
+*.p12
+*.pem
+/android/app/src/main/assets/models/
+/assets/models/
+
+# Python Virtual Environments
+.venv/
+venv/
+**/venv/
+**/.venv/
+scripts/.venv/
+scripts/venv/

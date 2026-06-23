@@ -11,6 +11,11 @@ import 'package:whiteapp/features/profile/screens/notification_preferences_scree
 import 'package:whiteapp/features/profile/screens/offline_downloads_screen.dart';
 import 'package:whiteapp/features/feedback/screens/feedback_screen.dart';
 import 'package:whiteapp/features/community/screens/moderation_queue_screen.dart';
+import 'package:whiteapp/features/ai/screens/ai_status_screen.dart';
+import 'package:whiteapp/features/buddy/services/buddy_service.dart';
+import 'package:whiteapp/features/buddy/models/buddy_pairing.dart';
+import 'package:whiteapp/features/buddy/screens/buddy_invite_screen.dart';
+import 'package:whiteapp/features/buddy/screens/buddy_status_screen.dart';
 import 'dart:ui';
 
 class ProfileScreen extends StatefulWidget {
@@ -22,6 +27,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   UserProfile? _profile;
+  BuddyPairing? _buddyPairing;
   bool _isLoading = true;
   bool _isEditing = false;
   final _formKey = GlobalKey<FormState>();
@@ -64,8 +70,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadProfile() async {
     try {
       final profile = await ProfileService.getProfile();
+      BuddyPairing? pairing;
+      try {
+        pairing = await BuddyService.getPairingStatus();
+      } catch (e) {
+        debugPrint("Error loading buddy pairing in profile: $e");
+      }
+
       setState(() {
         _profile = profile;
+        _buddyPairing = pairing;
         _isLoading = false;
         _populateControllers();
       });
@@ -374,8 +388,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(color: Colors.white24, height: 1)),
                             _buildSettingsTile(
                               icon: Icons.security_outlined,
-                              title: 'Privacy & Security',
-                              onTap: () {}, // TODO
+                              title: 'AI Content Engine',
+                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AiStatusScreen())),
+                            ),
+                            const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(color: Colors.white24, height: 1)),
+                            _buildSettingsTile(
+                              icon: Icons.handshake_rounded,
+                              title: _buddyPairing != null && _buddyPairing!.status == 'active'
+                                  ? 'Accountability Buddy: ${_buddyPairing!.buddyName ?? _buddyPairing!.buddyEmail ?? "Active"} 🟢'
+                                  : 'Setup Accountability Buddy →',
+                              onTap: () {
+                                if (_buddyPairing != null && _buddyPairing!.status == 'active') {
+                                  Navigator.pushNamed(context, BuddyStatusScreen.id).then((_) => _loadProfile());
+                                } else {
+                                  Navigator.pushNamed(context, BuddyInviteScreen.id).then((_) => _loadProfile());
+                                }
+                              },
                             ),
                             const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Divider(color: Colors.white24, height: 1)),
                             _buildSettingsTile(

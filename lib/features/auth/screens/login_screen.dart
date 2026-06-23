@@ -6,6 +6,7 @@ import 'package:whiteapp/features/auth/screens/signup_screen.dart';
 import 'package:whiteapp/features/home/screens/home_screen.dart';
 import 'package:whiteapp/features/onboarding/screens/walkthrough_screen.dart';
 import 'package:whiteapp/features/recovery/services/recovery_service.dart';
+import 'package:whiteapp/features/buddy/services/buddy_service.dart';
 import 'package:loading_overlay/loading_overlay.dart';
 import 'package:whiteapp/core/services/social_auth_service.dart';
 
@@ -100,6 +101,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             try {
                               await ApiService.login(_email, _password);
                               if (context.mounted) {
+                                // Check if this is a buddy account
+                                final isBuddy = await BuddyService.getBuddyDashboard().then((_) => true).catchError((_) => false);
+                                if (isBuddy && context.mounted) {
+                                  setState(() => _saving = false);
+                                  Navigator.pushReplacementNamed(context, 'buddy_dashboard');
+                                  return;
+                                }
+
                                 final enrollments = await RecoveryService.getUserEnrollments();
                                 if (context.mounted) {
                                   setState(() => _saving = false);
@@ -142,6 +151,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             try {
                               await SocialAuthService().googleLogin();
                               if (context.mounted) {
+                                // Check if this is a buddy account
+                                final isBuddy = await BuddyService.getBuddyDashboard().then((_) => true).catchError((_) => false);
+                                if (isBuddy && context.mounted) {
+                                  setState(() => _saving = false);
+                                  Navigator.pushReplacementNamed(context, 'buddy_dashboard');
+                                  return;
+                                }
+
                                 final enrollments = await RecoveryService.getUserEnrollments();
                                 if (context.mounted) {
                                   setState(() => _saving = false);
