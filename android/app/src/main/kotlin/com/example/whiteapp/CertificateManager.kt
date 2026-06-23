@@ -18,19 +18,50 @@ import java.security.KeyStore
 import java.security.Security
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import java.security.MessageDigest
+import javax.crypto.Cipher
+import javax.crypto.spec.SecretKeySpec
+import java.nio.charset.StandardCharsets
 
 /**
  * CertificateManager handles the full lifecycle of the WhiteApp Root CA:
  *   1. Registers our own BouncyCastle provider (fixes Android's stripped-down BC conflict)
  *   2. Generates the Root CA keypair + self-signed certificate via littleproxy-mitm
- *   3. Exports the CA certificate to Downloads on Android 11+ for manual installation
- *   4. Launches the standard installer dialog on Android 10 and below
- *   5. Programmatically checks the Android trust store to verify if the certificate is active
+ *   3. Backs up the generated certificate and private key securely (encrypted with ANDROID_ID)
+ *      to the public Downloads folder so it survives app uninstalls and reinstalls.
+ *   4. Exports the CA certificate to Downloads on Android 11+ for manual installation
+ *   5. Launches the standard installer dialog on Android 10 and below
+ *   6. Programmatically checks the Android trust store to verify if the certificate is active
  */
 object CertificateManager {
     private const val TAG = "CertificateManager"
     private const val ALIAS = "whiteapp-ca"
     private const val PASSWORD = "WhiteAppSecurityPassword"
+    private const val PEM_BACKUP_NAME = ".whiteapp_ca_pem.bak"
+    private const val P12_BACKUP_NAME = ".whiteapp_ca_p12.bak"
+
+    private object CryptoUtils {
+        private const val ALGORITHM = "AES"
+        private const val TRANSFORMATION = "AES/ECB/PKCS5Padding"
+
+        fun encrypt(data: ByteArray, keySeed: String): ByteArray {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val keyBytes = digest.digest(keySeed.toByteArray(StandardCharsets.UTF_8))
+            val secretKey = SecretKeySpec(keyBytes, ALGORITHM)
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+            return cipher.doFinal(data)
+        }
+
+        fun decrypt(data: ByteArray, keySeed: String): ByteArray {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val keyBytes = digest.digest(keySeed.toByteArray(StandardCharsets.UTF_8))
+            val secretKey = SecretKeySpec(keyBytes, ALGORITHM)
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, secretKey)
+            return cipher.doFinal(data)
+        }
+    }
 
     /**
      * CRITICAL: Android ships a stripped-down BouncyCastle provider internally.
@@ -76,7 +107,8 @@ object CertificateManager {
 
     /**
      * Initializes and returns the Authority configuration.
-     * If the CA files do not exist, generates them via CertificateSniffingMitmManager.
+     * If the CA files do not exist, tries to restore them from external storage backup.
+     * If no backup exists, generates new CA files.
      */
     fun getOrGenerateAuthority(context: Context): Authority {
         ensureBouncyCastleProvider()
@@ -84,6 +116,15 @@ object CertificateManager {
         val caDir = File(context.filesDir, "ca").apply { if (!exists()) mkdirs() }
         val pemFile = File(caDir, "$ALIAS.pem")
         val p12File = File(caDir, "$ALIAS.p12")
+
+        // 1. If files don't exist, check if backups exist in public Downloads and restore them
+        if (!pemFile.exists() || !p12File.exists()) {
+            Log.i(TAG, "Root CA files not found locally. Checking for backup files in Downloads...")
+            val restored = restoreBackupFiles(context, pemFile, p12File)
+            if (restored) {
+                Log.i(TAG, "Successfully restored CA certificate and private key from backup.")
+            }
+        }
 
         // Auto-detect and purge old certificates with invalid metadata
         if (pemFile.exists()) {
@@ -120,6 +161,9 @@ object CertificateManager {
             try {
                 CertificateSniffingMitmManager(authority)
                 Log.i(TAG, "Root CA generated successfully at ${pemFile.absolutePath}")
+                
+                // Immediately save backup
+                createBackupFiles(context, pemFile, p12File)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to generate Root CA: ${e.message}", e)
             }
@@ -251,5 +295,103 @@ object CertificateManager {
         } catch (e: Exception) {
             Log.e(TAG, "Error installing certificate: ${e.message}", e)
         }
+    }
+
+    private fun createBackupFiles(context: Context, pemFile: File, p12File: File) {
+        if (pemFile.exists()) {
+            saveBackupFile(context, pemFile, PEM_BACKUP_NAME)
+        }
+        if (p12File.exists()) {
+            saveBackupFile(context, p12File, P12_BACKUP_NAME)
+        }
+    }
+
+    private fun restoreBackupFiles(context: Context, pemFile: File, p12File: File): Boolean {
+        val pemRestored = restoreBackupFile(context, pemFile, PEM_BACKUP_NAME)
+        val p12Restored = restoreBackupFile(context, p12File, P12_BACKUP_NAME)
+        return pemRestored && p12Restored
+    }
+
+    private fun saveBackupFile(context: Context, sourceFile: File, displayName: String) {
+        try {
+            val keySeed = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "default_seed"
+            val encryptedBytes = CryptoUtils.encrypt(sourceFile.readBytes(), keySeed)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val uri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                
+                // Clear any existing old backup row
+                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+                val selectionArgs = arrayOf(displayName)
+                try {
+                    resolver.delete(uri, selection, selectionArgs)
+                } catch (e: Exception) {}
+
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val insertedUri = resolver.insert(uri, contentValues)
+                if (insertedUri != null) {
+                    resolver.openOutputStream(insertedUri)?.use { output ->
+                        output.write(encryptedBytes)
+                    }
+                    Log.i(TAG, "Saved encrypted CA backup to Downloads: $displayName")
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val targetFile = File(downloadDir, displayName)
+                targetFile.writeBytes(encryptedBytes)
+                Log.i(TAG, "Saved encrypted CA backup to legacy Downloads: ${targetFile.absolutePath}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save backup file $displayName: ${e.message}", e)
+        }
+    }
+
+    private fun restoreBackupFile(context: Context, destFile: File, displayName: String): Boolean {
+        try {
+            val keySeed = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "default_seed"
+            val resolver = context.contentResolver
+            
+            val backupBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val uri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                val projection = arrayOf(MediaStore.MediaColumns._ID)
+                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+                val selectionArgs = arrayOf(displayName)
+                var fileUri: android.net.Uri? = null
+                
+                resolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+                        fileUri = android.content.ContentUris.withAppendedId(uri, id)
+                    }
+                }
+                
+                fileUri?.let { targetUri ->
+                    resolver.openInputStream(targetUri)?.use { input ->
+                        input.readBytes()
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val targetFile = File(downloadDir, displayName)
+                if (targetFile.exists()) targetFile.readBytes() else null
+            }
+
+            if (backupBytes != null && backupBytes.isNotEmpty()) {
+                val decryptedBytes = CryptoUtils.decrypt(backupBytes, keySeed)
+                destFile.writeBytes(decryptedBytes)
+                Log.i(TAG, "Successfully restored CA backup file: $displayName")
+                return true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to restore backup file $displayName: ${e.message}", e)
+        }
+        return false
     }
 }
