@@ -44,12 +44,44 @@ class WhiteAccessibilityService : AccessibilityService() {
     private var scaleCanvas: android.graphics.Canvas? = null
     private val scaleRect = android.graphics.Rect(0, 0, 320, 320)
 
+    @Volatile private var cachedBrowsers = setOf<String>()
+    private var lastBrowserQueryTime = 0L
+
+    private fun isDisallowedBrowser(packageName: String): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastBrowserQueryTime > 30000 || cachedBrowsers.isEmpty()) {
+            try {
+                val pm = packageManager
+                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com")).apply {
+                    addCategory(Intent.CATEGORY_BROWSABLE)
+                }
+                val list = pm.queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                cachedBrowsers = list.mapNotNull { it.activityInfo?.packageName }.toSet()
+                lastBrowserQueryTime = now
+            } catch (e: Exception) {
+                Log.e("WhiteAccessibility", "Failed to query browsers: ${e.message}")
+            }
+        }
+        return cachedBrowsers.contains(packageName) && packageName != "com.android.chrome" && packageName != "org.mozilla.firefox"
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString() ?: return
         
         // Log event for developers to see it's active
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             Log.d("WhiteAccessibility", "ACCESSIBILITY EVENT: Active app changed to [$packageName]")
+            
+            // Block disallowed browsers
+            if (isDisallowedBrowser(packageName)) {
+                Log.w("WhiteAccessibility", "Blocking unauthorized browser app: $packageName")
+                mainHandler.post {
+                    BlockingOverlay.show(this@WhiteAccessibilityService, "UNSUPPORTED_BROWSER") {
+                        goHome()
+                    }
+                }
+                return
+            }
         }
         
         // Keyword search monitoring on text change

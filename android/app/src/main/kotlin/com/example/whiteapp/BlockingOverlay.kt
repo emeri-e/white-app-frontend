@@ -47,8 +47,10 @@ object BlockingOverlay {
                 setPadding(50, 50, 50, 50)
             }
 
+            val isBrowserBlock = triggeringClass == "UNSUPPORTED_BROWSER"
+
             val titleView = TextView(context).apply {
-                text = "Shield Activated"
+                text = if (isBrowserBlock) "Browser Blocked" else "Shield Activated"
                 textSize = 28f
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
@@ -56,7 +58,11 @@ object BlockingOverlay {
             }
 
             val descView = TextView(context).apply {
-                text = "Explicit visual content detected: $triggeringClass\nWhiteApp blocked this screen for your safety."
+                text = if (isBrowserBlock) {
+                    "This browser is not supported because it ignores safe-filtering protection.\n\nPlease use Google Chrome or Firefox."
+                } else {
+                    "Explicit visual content detected: $triggeringClass\nWhiteApp blocked this screen for your safety."
+                }
                 textSize = 16f
                 setTextColor(Color.parseColor("#CCCCCC"))
                 gravity = Gravity.CENTER
