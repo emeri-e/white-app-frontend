@@ -14,7 +14,6 @@ import java.util.concurrent.Executors
 class WhiteAccessibilityService : AccessibilityService() {
 
     private val blockedApps = setOf(
-        "com.android.settings", // Settings app to protect configuration
         "com.android.chrome", // Browser block incognito checks
         "com.android.vending", // Play Store settings guard
         "com.google.android.youtube"
@@ -53,7 +52,7 @@ class WhiteAccessibilityService : AccessibilityService() {
             Log.d("WhiteAccessibility", "ACCESSIBILITY EVENT: Active app changed to [$packageName]")
         }
         
-        // 4. Keyword search monitoring on text change
+        // Keyword search monitoring on text change
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
             val textVal = event.text?.joinToString(" ") ?: ""
             if (textVal.isNotEmpty()) {
@@ -63,19 +62,14 @@ class WhiteAccessibilityService : AccessibilityService() {
 
         val rootNode = rootInActiveWindow ?: return
 
-        // 1. settings protection: Prevent disabling WhiteApp accessibility
-        if (packageName == "com.android.settings") {
-            inspectSettingsHierarchy(rootNode)
-        }
-
-        // 2. Browser incognito blocker
+        // Browser incognito blocker
         if (packageName == "com.android.chrome") {
             inspectChromeIncognito(rootNode)
             // Recursively inspect Chrome nodes for triggering keywords in URL bar
             inspectNodeForKeywordsRecursive(rootNode, packageName)
         }
 
-        // 3. Screen visual scanning (Track 2)
+        // Screen visual scanning
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             triggerScreenScan(packageName)
         }
@@ -130,6 +124,7 @@ class WhiteAccessibilityService : AccessibilityService() {
             inspectNodeForKeywordsRecursive(child, appName)
         }
     }
+
     private fun triggerScreenScan(packageName: String) {
         if (whitelistedApps.contains(packageName)) return
         if (BlockingOverlay.isShowing()) return
@@ -150,38 +145,44 @@ class WhiteAccessibilityService : AccessibilityService() {
                         try {
                             val hardwareBuffer = screenshotResult.hardwareBuffer
                             val colorSpace = screenshotResult.colorSpace
-                            val bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
+                            val hardwareBitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
                             
-                            if (bitmap != null) {
-                                // Initialize pre-allocated bitmap if needed
-                                if (scaleBitmap == null) {
-                                    scaleBitmap = Bitmap.createBitmap(320, 320, Bitmap.Config.ARGB_8888)
-                                    scaleCanvas = android.graphics.Canvas(scaleBitmap!!)
-                                }
+                            if (hardwareBitmap != null) {
+                                // Convert hardware-backed GPU bitmap to software-backed CPU bitmap
+                                val bitmap = hardwareBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                                hardwareBitmap.recycle()
                                 
-                                // Draw and scale hardware bitmap directly to our software bitmap
-                                scaleCanvas!!.drawBitmap(bitmap, null, scaleRect, null)
-                                
-                                // Recycle hardware bitmap immediately (freeing native resources)
-                                bitmap.recycle()
-                                
-                                val isBlocked = ScreenAnalyzer.analyzeScreen(
-                                    context = this@WhiteAccessibilityService,
-                                    screenshot = scaleBitmap!!,
-                                    packageName = packageName
-                                )
-                                
-                                if (isBlocked) {
-                                    mainHandler.post {
-                                        BlockingOverlay.show(this@WhiteAccessibilityService, "EXPLICIT_CONTENT_OVERLAY") {
-                                            goHome()
+                                if (bitmap != null) {
+                                    // Initialize pre-allocated bitmap if needed
+                                    if (scaleBitmap == null) {
+                                        scaleBitmap = Bitmap.createBitmap(320, 320, Bitmap.Config.ARGB_8888)
+                                        scaleCanvas = android.graphics.Canvas(scaleBitmap!!)
+                                    }
+                                    
+                                    // Draw and scale software bitmap directly to our software bitmap
+                                    scaleCanvas!!.drawBitmap(bitmap, null, scaleRect, null)
+                                    
+                                    // Recycle software copy immediately to free memory
+                                    bitmap.recycle()
+                                    
+                                    val isBlocked = ScreenAnalyzer.analyzeScreen(
+                                        context = this@WhiteAccessibilityService,
+                                        screenshot = scaleBitmap!!,
+                                        packageName = packageName
+                                    )
+                                    
+                                    if (isBlocked) {
+                                        mainHandler.post {
+                                            BlockingOverlay.show(this@WhiteAccessibilityService, "EXPLICIT_CONTENT_OVERLAY") {
+                                                goHome()
+                                            }
                                         }
                                     }
                                 }
                             }
                             hardwareBuffer.close()
                         } catch (e: Exception) {
-                            Log.e("WhiteAccessibility", "Error in screenshot processing callback: ${e.message}")
+                            Log.e("WhiteAccessibility", "Error in screenshot processing callback: ${e.message}", e)
                         } finally {
                             isScanInProgress = false
                         }
@@ -196,27 +197,6 @@ class WhiteAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e("WhiteAccessibility", "Screen capture scan error: ${e.message}")
             isScanInProgress = false
-        }
-    }
-
-    private fun inspectSettingsHierarchy(node: AccessibilityNodeInfo) {
-        val textList = node.findAccessibilityNodeInfosByText("WhiteApp")
-        if (textList.isNotEmpty()) {
-            val deactivateText = node.findAccessibilityNodeInfosByText("Deactivate")
-            val stopText = node.findAccessibilityNodeInfosByText("Stop")
-            val turnOffText = node.findAccessibilityNodeInfosByText("Turn off")
-            
-            if (deactivateText.isNotEmpty() || stopText.isNotEmpty() || turnOffText.isNotEmpty()) {
-                Log.w("WhiteAccessibility", "Bypassing accessibility deactivation attempt!")
-                goHome()
-            }
-        }
-        
-        val vpnText = node.findAccessibilityNodeInfosByText("VPN")
-        val disconnectText = node.findAccessibilityNodeInfosByText("Disconnect")
-        if (vpnText.isNotEmpty() && disconnectText.isNotEmpty()) {
-            Log.w("WhiteAccessibility", "VPN disconnection attempt detected inside settings. Blocking...")
-            goHome()
         }
     }
 
