@@ -1,5 +1,6 @@
 package com.example.whiteapp
 
+import android.content.Context
 import android.util.Log
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -21,6 +22,9 @@ object SafeDnsResolver {
     private const val TIMEOUT_MS = 3000
     private const val DEFAULT_TTL_MS = 300_000L // 5 minutes default fallback TTL
 
+    // In-memory set of custom blocked domains (loaded from blocked_domains.txt)
+    private val blockedDomains = ConcurrentHashMap.newKeySet<String>()
+
     // In-memory DNS cache: hostname (lowercase) -> Cached IP and expiration timestamp
     private val dnsCache = ConcurrentHashMap<String, CachedDnsResponse>()
 
@@ -33,9 +37,48 @@ object SafeDnsResolver {
     private val IPV4_PATTERN = Regex("""^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$""")
 
     /**
+     * Loads the domain blocklist from the local blocked_domains.txt file.
+     */
+    fun loadBlocklist(context: Context) {
+        try {
+            val file = context.getDatabasePath("blocked_domains.txt")
+            if (file.exists()) {
+                val lines = file.readLines()
+                    .map { it.lowercase().trim() }
+                    .filter { it.isNotEmpty() }
+                blockedDomains.clear()
+                blockedDomains.addAll(lines)
+                Log.i(TAG, "Loaded ${blockedDomains.size} domains into local DNS blocklist.")
+            } else {
+                Log.w(TAG, "Local DNS blocklist file does not exist.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load local DNS blocklist: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Checks if a domain or any of its parent subdomains are blocked.
+     */
+    private fun isDomainBlocked(host: String): Boolean {
+        if (blockedDomains.isEmpty()) return false
+        var target = host.lowercase().trim()
+        
+        while (target.contains('.')) {
+            if (blockedDomains.contains(target)) {
+                return true
+            }
+            val parts = target.split(".", limit = 2)
+            if (parts.size < 2) break
+            target = parts[1]
+        }
+        return blockedDomains.contains(target)
+    }
+
+    /**
      * Resolves the given host to an InetAddress.
      * If the host is already an IP address literal, returns it directly.
-     * Otherwise checks the local cache before performing a UDP request.
+     * Otherwise checks the local cache and blocklist before performing a UDP request.
      */
     fun resolve(host: String): InetAddress {
         val lowercaseHost = host.lowercase().trim()
@@ -44,6 +87,12 @@ object SafeDnsResolver {
         if (IPV4_PATTERN.matches(lowercaseHost) || lowercaseHost.contains(':')) {
             Log.d(TAG, "IP literal detected, skipping DNS: $lowercaseHost")
             return InetAddress.getByName(lowercaseHost)
+        }
+
+        // Check custom local blocklist first
+        if (isDomainBlocked(lowercaseHost)) {
+            Log.w(TAG, "DNS Blocked (Local policy): $lowercaseHost")
+            throw UnknownHostException("Domain blocked by local DNS policy: $lowercaseHost")
         }
 
         val now = System.currentTimeMillis()

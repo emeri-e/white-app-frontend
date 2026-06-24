@@ -37,8 +37,8 @@ object CertificateManager {
     private const val TAG = "CertificateManager"
     private const val ALIAS = "whiteapp-ca"
     private const val PASSWORD = "WhiteAppSecurityPassword"
-    private const val PEM_BACKUP_NAME = ".whiteapp_ca_pem.bak"
-    private const val P12_BACKUP_NAME = ".whiteapp_ca_p12.bak"
+    private const val PEM_BACKUP_NAME = "whiteapp_ca_pem.bak"
+    private const val P12_BACKUP_NAME = "whiteapp_ca_p12.bak"
 
     private object CryptoUtils {
         private const val ALGORITHM = "AES"
@@ -84,21 +84,41 @@ object CertificateManager {
      */
     fun isCertificateInstalled(context: Context): Boolean {
         try {
+            // 1. Ensure local CA files always exist by calling getOrGenerateAuthority.
+            //    This will restore from backup or generate new files if needed.
+            getOrGenerateAuthority(context)
+
+            val caDir = File(context.filesDir, "ca")
+            val pemFile = File(caDir, "$ALIAS.pem")
+
+            // 2. If we still don't have a local PEM (generation somehow failed), not installed
+            if (!pemFile.exists()) {
+                Log.w(TAG, "Local CA PEM file does not exist even after generation. Reporting as NOT installed.")
+                return false
+            }
+
+            // 3. Load our local CA certificate
+            val pemBytes = pemFile.readBytes()
+            val cf = CertificateFactory.getInstance("X.509")
+            val localCert = cf.generateCertificate(ByteArrayInputStream(pemBytes)) as? X509Certificate
+            if (localCert == null) {
+                Log.e(TAG, "Failed to parse local PEM certificate. Reporting as NOT installed.")
+                return false
+            }
+
+            // 4. Check if a certificate with matching public key is installed in the system trust store
             val keyStore = KeyStore.getInstance("AndroidCAStore")
             keyStore.load(null, null)
             val aliases = keyStore.aliases()
             while (aliases.hasMoreElements()) {
                 val alias = aliases.nextElement() as String
                 val cert = keyStore.getCertificate(alias) as? X509Certificate
-                if (cert != null) {
-                    val subject = cert.subjectDN.name
-                    // Match our Common Name or Organization
-                    if (subject.contains("CN=WhiteApp Root CA") || subject.contains("O=WhiteApp")) {
-                        Log.i(TAG, "Verified: WhiteApp Root CA is installed in AndroidCAStore ($alias).")
-                        return true
-                    }
+                if (cert != null && cert.publicKey == localCert.publicKey) {
+                    Log.i(TAG, "Verified: Matching WhiteApp Root CA is installed and active in AndroidCAStore ($alias).")
+                    return true
                 }
             }
+            Log.w(TAG, "No matching certificate found in AndroidCAStore for our local public key.")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to check AndroidCAStore: ${e.message}", e)
         }

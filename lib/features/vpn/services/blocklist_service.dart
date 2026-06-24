@@ -175,21 +175,23 @@ class BlocklistService {
     final List<dynamic> whitelist = payload['whitelist'] ?? [];
     final List<dynamic> sensitivity = payload['sensitivity'] ?? [];
 
+    // Save domains to a local text file to avoid SQLite performance bottleneck
+    try {
+      final dbPath = await getDatabasesPath();
+      final txtFile = File(path_pkg.join(dbPath, 'blocked_domains.txt'));
+      final content = domains.map((d) => d.toString().trim().toLowerCase()).join('\n');
+      await txtFile.writeAsString(content);
+      print('Successfully wrote ${domains.length} domains to blocked_domains.txt');
+    } catch (e) {
+      print('Failed to write blocked_domains.txt: $e');
+    }
+
     await db.transaction((txn) async {
-      // Clear current lists
-      await txn.delete('blocked_domains');
+      // Clear current lists (except blocked_domains since we don't store it in SQLite anymore)
       await txn.delete('blocked_keywords');
       await txn.delete('blocked_urls');
       await txn.delete('whitelisted_domains');
       await txn.delete('sensitivity_configs');
-
-      // Populate domains
-      for (final dom in domains) {
-        await txn.insert('blocked_domains', {
-          'domain': dom.toString(),
-          'category': 'nudity',
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
-      }
 
       // Populate keywords
       for (final kw in keywords) {
@@ -234,8 +236,8 @@ class BlocklistService {
     });
 
     if (Platform.isIOS) {
-      final List<String> domains = await getBlockedDomains();
-      await IosScreenTimeService.instance.updateBlockedDomains(domains);
+      final List<String> domainsList = await getBlockedDomains();
+      await IosScreenTimeService.instance.updateBlockedDomains(domainsList);
     }
 
     print('Blocklist SQLite updated successfully to v$version!');
@@ -258,11 +260,23 @@ class BlocklistService {
     }
   }
 
-  /// Load complete list of blocked domains for native bridge fast lookups
+  /// Load complete list of blocked domains from local text file
   Future<List<String>> getBlockedDomains() async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('blocked_domains');
-    return maps.map((m) => m['domain'].toString()).toList();
+    try {
+      final dbPath = await getDatabasesPath();
+      final txtFile = File(path_pkg.join(dbPath, 'blocked_domains.txt'));
+      if (await txtFile.exists()) {
+        final content = await txtFile.readAsString();
+        return content
+            .split('\n')
+            .map((line) => line.trim())
+            .where((line) => line.isNotEmpty)
+            .toList();
+      }
+    } catch (e) {
+      print('Failed to read blocked domains file: $e');
+    }
+    return [];
   }
 
   /// Load complete list of allowed whitelisted domains

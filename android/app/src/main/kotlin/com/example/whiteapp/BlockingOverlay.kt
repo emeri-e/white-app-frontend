@@ -3,7 +3,6 @@ package com.example.whiteapp
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.os.Build
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -24,17 +23,15 @@ object BlockingOverlay {
             windowManager = wm
 
             // Create a sleek full-screen dark container
+            // Use TYPE_ACCESSIBILITY_OVERLAY: trusted window type for accessibility services
+            // that doesn't require SYSTEM_ALERT_WINDOW permission and isn't subject to
+            // "untrusted touch" blocking. Remove FLAG_NOT_FOCUSABLE so the overlay
+            // captures ALL touch input and blocks interaction with the app behind it.
             val layoutParams = WindowManager.LayoutParams().apply {
                 width = WindowManager.LayoutParams.MATCH_PARENT
                 height = WindowManager.LayoutParams.MATCH_PARENT
-                type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WindowManager.LayoutParams.TYPE_PHONE
-                }
-                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 format = PixelFormat.TRANSLUCENT
             }
@@ -48,9 +45,14 @@ object BlockingOverlay {
             }
 
             val isBrowserBlock = triggeringClass == "UNSUPPORTED_BROWSER"
+            val isIncognitoBlock = triggeringClass == "INCOGNITO_MODE"
 
             val titleView = TextView(context).apply {
-                text = if (isBrowserBlock) "Browser Blocked" else "Shield Activated"
+                text = when {
+                    isBrowserBlock -> "Browser Blocked"
+                    isIncognitoBlock -> "Incognito Mode Blocked"
+                    else -> "Shield Activated"
+                }
                 textSize = 28f
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
@@ -58,10 +60,16 @@ object BlockingOverlay {
             }
 
             val descView = TextView(context).apply {
-                text = if (isBrowserBlock) {
-                    "This browser is not supported because it ignores safe-filtering protection.\n\nPlease use Google Chrome or Firefox."
-                } else {
-                    "Explicit visual content detected: $triggeringClass\nWhiteApp blocked this screen for your safety."
+                text = when {
+                    isBrowserBlock -> {
+                        "This browser is not supported because it ignores safe-filtering protection.\n\nPlease use Google Chrome or Firefox."
+                    }
+                    isIncognitoBlock -> {
+                        "Incognito browsing is disabled to ensure content filters remain active.\n\nPlease use a standard browser tab."
+                    }
+                    else -> {
+                        "Explicit visual content detected: $triggeringClass\nWhiteApp blocked this screen for your safety."
+                    }
                 }
                 textSize = 16f
                 setTextColor(Color.parseColor("#CCCCCC"))

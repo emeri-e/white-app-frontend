@@ -34,8 +34,33 @@ class WhiteAccessibilityService : AccessibilityService() {
         "com.google.android.dialer"        // Google Phone
     )
 
+    // Apps where AI screen scanning is active. Only scan apps likely to show explicit imagery.
+    private val scanTargetApps = setOf(
+        // Browsers
+        "com.android.chrome",
+        "org.mozilla.firefox",
+        // Social media
+        "com.instagram.android",
+        "com.snapchat.android",
+        "com.twitter.android",             // X / Twitter
+        "com.zhiliaoapp.musically",        // TikTok
+        "com.reddit.frontpage",
+        "com.tumblr",
+        "com.pinterest",
+        // Messaging with image sharing
+        "org.telegram.messenger",
+        "com.whatsapp",
+        "com.facebook.orca",               // Messenger
+        "com.discord",
+        // Social / media
+        "com.facebook.katana",
+        "com.google.android.apps.photos",  // Google Photos
+        "com.google.android.youtube",
+    )
+
     private var lastScanTime = 0L
-    private val scanIntervalMs = 400L
+    private var lastScanStartTime = 0L
+    private val scanIntervalMs = 1500L // Scan at most once every 1.5 seconds to prevent OS queue congestion
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -48,6 +73,9 @@ class WhiteAccessibilityService : AccessibilityService() {
     private var lastBrowserQueryTime = 0L
 
     private fun isDisallowedBrowser(packageName: String): Boolean {
+        if (packageName == "com.android.chrome" || packageName == "org.mozilla.firefox" || packageName == "com.example.whiteapp") {
+            return false
+        }
         val now = System.currentTimeMillis()
         if (now - lastBrowserQueryTime > 30000 || cachedBrowsers.isEmpty()) {
             try {
@@ -55,14 +83,25 @@ class WhiteAccessibilityService : AccessibilityService() {
                 val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com")).apply {
                     addCategory(Intent.CATEGORY_BROWSABLE)
                 }
-                val list = pm.queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                val list = pm.queryIntentActivities(intent, 0)
                 cachedBrowsers = list.mapNotNull { it.activityInfo?.packageName }.toSet()
                 lastBrowserQueryTime = now
             } catch (e: Exception) {
                 Log.e("WhiteAccessibility", "Failed to query browsers: ${e.message}")
             }
         }
-        return cachedBrowsers.contains(packageName) && packageName != "com.android.chrome" && packageName != "org.mozilla.firefox"
+        if (cachedBrowsers.contains(packageName)) {
+            return true
+        }
+        val lowerPkg = packageName.lowercase()
+        return lowerPkg.contains("browser") || 
+               lowerPkg.contains("sbrowser") || 
+               lowerPkg.contains("ucmobile") || 
+               lowerPkg.contains("opera") || 
+               lowerPkg.contains("duckduckgo") || 
+               lowerPkg.contains("brave") || 
+               lowerPkg.contains("kiwi") || 
+               lowerPkg.contains("via")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -72,14 +111,23 @@ class WhiteAccessibilityService : AccessibilityService() {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             Log.d("WhiteAccessibility", "ACCESSIBILITY EVENT: Active app changed to [$packageName]")
             
+            // Auto-dismiss active overlay when user switches back to a whitelisted safe app/launcher
+            if (whitelistedApps.contains(packageName)) {
+                mainHandler.post {
+                    BlockingOverlay.dismiss()
+                }
+            }
+
             // Block disallowed browsers
             if (isDisallowedBrowser(packageName)) {
                 Log.w("WhiteAccessibility", "Blocking unauthorized browser app: $packageName")
+                // Show overlay immediately, then go home after a short delay so user can read the message
                 mainHandler.post {
                     BlockingOverlay.show(this@WhiteAccessibilityService, "UNSUPPORTED_BROWSER") {
                         goHome()
                     }
                 }
+                mainHandler.postDelayed({ goHome() }, 2000) // 2 seconds to read, then force home
                 return
             }
         }
@@ -92,18 +140,21 @@ class WhiteAccessibilityService : AccessibilityService() {
             }
         }
 
-        val rootNode = rootInActiveWindow ?: return
-
-        // Browser incognito blocker
-        if (packageName == "com.android.chrome") {
-            inspectChromeIncognito(rootNode)
-            // Recursively inspect Chrome nodes for triggering keywords in URL bar
-            inspectNodeForKeywordsRecursive(rootNode, packageName)
+        // Screen visual scanning — only for target apps, not everything
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && scanTargetApps.contains(packageName)) {
+            triggerScreenScan(packageName)
         }
 
-        // Screen visual scanning
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            triggerScreenScan(packageName)
+        val rootNode = rootInActiveWindow ?: return
+
+        // Browser incognito blocker — only check on window state changes to avoid menu false positives
+        if (packageName == "com.android.chrome" && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            inspectChromeIncognito(rootNode)
+        }
+
+        // Recursively inspect Chrome nodes for triggering keywords in URL bar
+        if (packageName == "com.android.chrome") {
+            inspectNodeForKeywordsRecursive(rootNode, packageName)
         }
     }
 
@@ -160,20 +211,31 @@ class WhiteAccessibilityService : AccessibilityService() {
     private fun triggerScreenScan(packageName: String) {
         if (whitelistedApps.contains(packageName)) return
         if (BlockingOverlay.isShowing()) return
-        if (isScanInProgress) return
 
         val now = System.currentTimeMillis()
+        if (isScanInProgress) {
+            // Self-recovery if callback was dropped by the OS
+            if (now - lastScanStartTime > 5000) {
+                Log.w("WhiteAccessibility", "Screen scanner: Stuck lock detected (>5s). Resetting isScanInProgress.")
+                isScanInProgress = false
+            } else {
+                return
+            }
+        }
         if (now - lastScanTime < scanIntervalMs) return
         lastScanTime = now
 
         isScanInProgress = true
+        lastScanStartTime = now
 
+        Log.d("WhiteAccessibility", "Screen scanner: Triggering takeScreenshot for package: $packageName")
         try {
             takeScreenshot(
                 android.view.Display.DEFAULT_DISPLAY,
                 executor,
                 object : TakeScreenshotCallback {
                     override fun onSuccess(screenshotResult: ScreenshotResult) {
+                        Log.d("WhiteAccessibility", "Screen scanner: Screenshot taken successfully.")
                         try {
                             val hardwareBuffer = screenshotResult.hardwareBuffer
                             val colorSpace = screenshotResult.colorSpace
@@ -202,6 +264,7 @@ class WhiteAccessibilityService : AccessibilityService() {
                                         screenshot = scaleBitmap!!,
                                         packageName = packageName
                                     )
+                                    Log.d("WhiteAccessibility", "Screen scanner: Analysis result: isBlocked=$isBlocked")
                                     
                                     if (isBlocked) {
                                         mainHandler.post {
@@ -234,18 +297,38 @@ class WhiteAccessibilityService : AccessibilityService() {
 
     private fun inspectChromeIncognito(node: AccessibilityNodeInfo) {
         val incognitoNodes = node.findAccessibilityNodeInfosByText("Incognito")
-        if (incognitoNodes.isNotEmpty()) {
+        if (incognitoNodes.isEmpty()) return
+
+        // Filter out false positives: menu items like "New incognito tab" contain the word
+        // but don't mean incognito is active. Only trigger if we find a node whose text
+        // is exactly "Incognito" (the tab indicator) or contains "You've gone Incognito".
+        val isActuallyIncognito = incognitoNodes.any { incognitoNode ->
+            val text = incognitoNode.text?.toString() ?: ""
+            val desc = incognitoNode.contentDescription?.toString() ?: ""
+            // Exact standalone "Incognito" label (tab indicator, not menu item)
+            text.equals("Incognito", ignoreCase = true) ||
+            // Chrome's incognito new tab page heading
+            text.contains("You've gone Incognito", ignoreCase = true) ||
+            text.contains("You're Incognito", ignoreCase = true) ||
+            // Content description on incognito indicator
+            desc.equals("Incognito", ignoreCase = true) ||
+            desc.contains("Incognito mode", ignoreCase = true)
+        }
+
+        if (isActuallyIncognito) {
             Log.w("WhiteAccessibility", "Chrome Incognito Mode block triggered!")
-            goHome()
+            // Show overlay, then force home after delay so user can read
+            mainHandler.post {
+                BlockingOverlay.show(this@WhiteAccessibilityService, "INCOGNITO_MODE") {
+                    goHome()
+                }
+            }
+            mainHandler.postDelayed({ goHome() }, 2000)
         }
     }
 
     private fun goHome() {
-        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        startActivity(homeIntent)
+        performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
     override fun onInterrupt() {

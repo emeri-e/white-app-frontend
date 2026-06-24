@@ -24,6 +24,9 @@ object ContentFilterProxy {
 
             Log.i(TAG, "Starting on-device Content Filter Proxy on port $PROXY_PORT...")
             try {
+                // Load local DNS blocklist
+                SafeDnsResolver.loadBlocklist(context)
+
                 // Get or generate Root CA authority parameters
                 val authority = CertificateManager.getOrGenerateAuthority(context)
 
