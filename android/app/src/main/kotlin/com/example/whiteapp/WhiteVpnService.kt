@@ -179,57 +179,13 @@ class WhiteVpnService : VpnService() {
             .setMtu(1500)
             .addAddress("10.0.0.2", 32)
 
-        // Route only browser applications through the VPN tunnel (App-Based Routing)
-        // This isolates high-bandwidth non-browser traffic (like speed test apps, updates, CDNs)
-        // from being proxied or decrypted, resolving performance/latency issues system-wide.
-        val browserPackages = mutableSetOf(
-            "com.android.chrome",
-            "org.mozilla.firefox",
-            "com.sec.android.app.sbrowser",
-            "com.microsoft.emmx",
-            "com.opera.browser",
-            "com.opera.mini.native",
-            "com.brave.browser",
-            "com.duckduckgo.mobile.android",
-            "com.android.browser",
-            "com.mi.globalbrowser",
-            "com.huawei.browser",
-            "com.vivaldi.browser",
-            "com.yandex.browser"
-        )
-
+        // Prevent routing loops by excluding our own app from the VPN tunnel
         try {
-            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("http://www.google.com"))
-            val pm = packageManager
-            val resolveInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
-            } else {
-                @Suppress("DEPRECATION")
-                pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
-            }
-            for (info in resolveInfos) {
-                val pkg = info.activityInfo.packageName
-                if (pkg != packageName) { // Exclude our own app
-                    browserPackages.add(pkg)
-                }
-            }
+            builder.addDisallowedApplication(packageName)
+            Log.i(TAG, "Excluded $packageName from VPN tunnel routing loops.")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to query system web browsers: ${e.message}")
+            Log.e(TAG, "Failed to exclude our own app package: ${e.message}")
         }
-
-        var allowedCount = 0
-        for (pkg in browserPackages) {
-            try {
-                builder.addAllowedApplication(pkg)
-                Log.i(TAG, "Routed browser application through VPN: $pkg")
-                allowedCount++
-            } catch (e: PackageManager.NameNotFoundException) {
-                // Ignore browsers that are not installed on this specific device
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not route application $pkg: ${e.message}")
-            }
-        }
-        Log.i(TAG, "Configured VPN tunnel to route $allowedCount browser application(s).")
 
         // Configure system-wide HTTP Proxy routing to intercept HTTP/HTTPS traffic (Option C)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
