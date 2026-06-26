@@ -58,7 +58,9 @@ class ImageScanFilter(
                 if (isImage(contentType, url)) {
                     val contentBuf = httpObject.content()
                     val readableBytes = contentBuf.readableBytes()
-                    if (readableBytes > 0) {
+                    // Skip tiny images (< 10KB) like icons, placeholders, avatars, and layout elements
+                    // to reduce CPU overhead and avoid blocking Netty threads.
+                    if (readableBytes >= 10240) {
                         try {
                             val bytes = ByteArray(readableBytes)
                             contentBuf.getBytes(contentBuf.readerIndex(), bytes)
@@ -269,26 +271,11 @@ class ImageScanFilter(
             val host = httpObject.headers().get("Host")?.split(":")?.first()?.lowercase() ?: ""
             val accept = httpObject.headers().get("Accept") ?: ""
 
-            // 1. If this is NOT a web page or image request, dynamically remove the response aggregator
-            // and decompressor from the client channel pipeline to allow raw, ultra-fast streaming bypass!
-            if (!isWebOrImageRequest(httpObject)) {
-                try {
-                    val pipeline = ctx?.pipeline()
-                    if (pipeline != null) {
-                        if (pipeline.get("aggregator") != null) {
-                            pipeline.remove("aggregator")
-                            Log.d(TAG, "🚀 Removed aggregator for non-web request: $uriStr")
-                        }
-                        if (pipeline.get("inflater") != null) {
-                            pipeline.remove("inflater")
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error dynamically removing pipeline handlers: ${e.message}")
-                }
-            } else {
-                // Force identity encoding for images and HTML requests so they stream uncompressed
-                httpObject.headers().set("Accept-Encoding", "identity")
+            // Remove Brotli (br) encoding since Netty might not support it natively without extra dependencies,
+            // but keep gzip and deflate enabled so that the transfer remains compressed and fast!
+            val acceptEncoding = httpObject.headers().get("Accept-Encoding")
+            if (acceptEncoding != null && acceptEncoding.contains("br")) {
+                httpObject.headers().set("Accept-Encoding", "gzip, deflate")
             }
 
             if (host.isNotEmpty() && !host.contains("businessportal.site") && !host.contains("10.0.2.2")) {

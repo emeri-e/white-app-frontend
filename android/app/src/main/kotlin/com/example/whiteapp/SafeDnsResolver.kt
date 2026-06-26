@@ -193,13 +193,29 @@ object SafeDnsResolver {
 
     /**
      * Checks if the given text contains any blocked keyword.
+     * Splitting search queries into words prevents false positives (e.g., blocking "speed" because of "pee",
+     * or "class" because of "ass") while still blocking exact matches and multi-word phrases.
      */
     fun isKeywordBlocked(text: String): Boolean {
         if (blockedKeywords.isEmpty()) return false
         val lowerText = text.lowercase().trim()
+        
+        // Split text into alphanumeric words
+        val words = lowerText.split(Regex("[^a-zA-Z0-9]+")).filter { it.isNotEmpty() }
+        
         for (kw in blockedKeywords) {
-            if (lowerText.contains(kw)) {
-                return true
+            val cleanKw = kw.lowercase().trim()
+            if (cleanKw.isEmpty()) continue
+            
+            // Check multi-word phrase or single word
+            if (cleanKw.contains(" ")) {
+                if (lowerText.contains(cleanKw)) {
+                    return true
+                }
+            } else {
+                if (words.contains(cleanKw)) {
+                    return true
+                }
             }
         }
         return false

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -178,25 +179,57 @@ class WhiteVpnService : VpnService() {
             .setMtu(1500)
             .addAddress("10.0.0.2", 32)
 
-        // Disallow cert-pinned Google apps and our own app from the VPN tunnel to prevent connection failures
-        val disallowedApps = listOf(
-            packageName,
-            "com.google.android.youtube",
-            "com.google.android.apps.maps",
-            "com.android.vending",
-            "com.google.android.gms",
-            "com.google.android.apps.photos",
-            "com.google.android.googlequicksearchbox",
-            "com.google.android.apps.messaging"
+        // Route only browser applications through the VPN tunnel (App-Based Routing)
+        // This isolates high-bandwidth non-browser traffic (like speed test apps, updates, CDNs)
+        // from being proxied or decrypted, resolving performance/latency issues system-wide.
+        val browserPackages = mutableSetOf(
+            "com.android.chrome",
+            "org.mozilla.firefox",
+            "com.sec.android.app.sbrowser",
+            "com.microsoft.emmx",
+            "com.opera.browser",
+            "com.opera.mini.native",
+            "com.brave.browser",
+            "com.duckduckgo.mobile.android",
+            "com.android.browser",
+            "com.mi.globalbrowser",
+            "com.huawei.browser",
+            "com.vivaldi.browser",
+            "com.yandex.browser"
         )
-        for (app in disallowedApps) {
+
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("http://www.google.com"))
+            val pm = packageManager
+            val resolveInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+            }
+            for (info in resolveInfos) {
+                val pkg = info.activityInfo.packageName
+                if (pkg != packageName) { // Exclude our own app
+                    browserPackages.add(pkg)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to query system web browsers: ${e.message}")
+        }
+
+        var allowedCount = 0
+        for (pkg in browserPackages) {
             try {
-                builder.addDisallowedApplication(app)
-                Log.i(TAG, "Excluded $app from VPN tunnel.")
+                builder.addAllowedApplication(pkg)
+                Log.i(TAG, "Routed browser application through VPN: $pkg")
+                allowedCount++
+            } catch (e: PackageManager.NameNotFoundException) {
+                // Ignore browsers that are not installed on this specific device
             } catch (e: Exception) {
-                Log.w(TAG, "Could not exclude package $app: ${e.message}")
+                Log.w(TAG, "Could not route application $pkg: ${e.message}")
             }
         }
+        Log.i(TAG, "Configured VPN tunnel to route $allowedCount browser application(s).")
 
         // Configure system-wide HTTP Proxy routing to intercept HTTP/HTTPS traffic (Option C)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -234,7 +267,30 @@ class WhiteVpnService : VpnService() {
                     "clients6.google.com",
                     "apis.google.com",
                     "maps.google.com",
-                    "mail.google.com"
+                    "mail.google.com",
+                    // Speed tests (bypass local proxy completely for maximum native speed)
+                    "fast.com", "*.fast.com",
+                    "speedtest.net", "*.speedtest.net",
+                    "ookla.com", "*.ookla.com",
+                    // Common large content distribution networks (CDNs)
+                    "netflix.com", "*.netflix.com",
+                    "nflxvideo.net", "*.nflxvideo.net",
+                    "nflxext.com", "*.nflxext.com",
+                    "nflxso.net", "*.nflxso.net",
+                    // Ads, Tracking, Telemetry & Cert-Pinned Non-Browser System Domains
+                    "doubleclick.net", "*.doubleclick.net",
+                    "googleads.g.doubleclick.net",
+                    "googleadservices.com", "*.googleadservices.com",
+                    "googlesyndication.com", "*.googlesyndication.com",
+                    "apple.com", "*.apple.com",
+                    "microsoft.com", "*.microsoft.com",
+                    "windowsupdate.com", "*.windowsupdate.com",
+                    "github.com", "*.github.com",
+                    "githubusercontent.com", "*.githubusercontent.com",
+                    "amazonaws.com", "*.amazonaws.com",
+                    "cloudflare.com", "*.cloudflare.com",
+                    "firebaseio.com", "*.firebaseio.com",
+                    "crashlytics.com", "*.crashlytics.com"
                 )
                 val proxyInfo = android.net.ProxyInfo.buildDirectProxy("127.0.0.1", 8888, exclusionList)
                 builder.setHttpProxy(proxyInfo)
