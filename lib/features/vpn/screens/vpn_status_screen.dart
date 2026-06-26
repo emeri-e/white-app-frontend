@@ -104,6 +104,143 @@ class _VpnStatusScreenState extends State<VpnStatusScreen> {
     setState(() => _isSyncing = false);
   }
 
+  void _showAccessibilityInstructions() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E2E),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+            border: Border.all(color: Colors.white10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Row(
+                  children: [
+                    Icon(Icons.accessibility_new, color: Colors.orangeAccent, size: 28),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Enable Bodyguard Service',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Android security requires a few quick manual steps to activate the background bodyguard. If the setting is greyed out, please complete Step 1 first:',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('1. ', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+                    Expanded(
+                      child: Text(
+                        'If Greyed Out: Tap "1. Open App Info" below, scroll/tap menu, select "Allow restricted settings", and confirm.',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('2. ', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+                    Expanded(
+                      child: Text(
+                        'Activate Guard: Tap "2. Open Accessibility" below, select "WhiteApp" under Downloaded Apps, and toggle it ON.',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => VpnService.instance.openAppInfoSettings(),
+                        icon: const Icon(Icons.info_outline, size: 18),
+                        label: const Text('1. Open App Info'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white12,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          VpnService.instance.openAccessibilitySettings();
+                        },
+                        icon: const Icon(Icons.accessibility, size: 18),
+                        label: const Text('2. Open Accessibility'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orangeAccent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white38,
+                  ),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -236,7 +373,7 @@ class _VpnStatusScreenState extends State<VpnStatusScreen> {
                                 : null)
                             : (!_a11yActive && Platform.isAndroid
                                 ? TextButton(
-                                    onPressed: () => VpnService.instance.openAccessibilitySettings(),
+                                    onPressed: _showAccessibilityInstructions,
                                     child: const Text('Enable', style: TextStyle(color: Colors.blueAccent)),
                                   )
                                 : null),

@@ -34,6 +34,7 @@ import 'package:whiteapp/features/recovery/services/recovery_service.dart';
 import 'package:whiteapp/features/buddy/services/buddy_service.dart';
 import 'package:whiteapp/features/ai/services/ai_model_updater.dart';
 import 'package:whiteapp/features/ai/services/block_reporter_service.dart';
+import 'package:whiteapp/core/constants/env.dart';
 import 'firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:whiteapp/core/widgets/splash_animation.dart';
@@ -53,6 +54,18 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Extract AI model to local storage for native side consumption (required for debug builds)
+  await AIModelUpdater.instance.ensureLocalModel();
+
+  // Save API base URL to SharedPreferences for Android native side consumption
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('api_base_url', Env.apiBase);
+  } catch (e) {
+    debugPrint("Failed to save api_base_url to SharedPreferences: $e");
+  }
+
   runApp(
     MultiProvider(
       providers: [

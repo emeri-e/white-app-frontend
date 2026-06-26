@@ -65,11 +65,22 @@ class BlockReporterService {
 
       // Map the events to match BlockEventSerializer fields exactly
       final formattedEvents = eventsList.map((e) {
+        final rawBlockType = e['block_type'] ?? 'ai_image';
+        String blockType = rawBlockType;
+        if (rawBlockType == 'ai_proxy' || rawBlockType == 'ai_inline') {
+          blockType = 'ai_image';
+        }
+
+        final rawUrl = e['url'] ?? '';
+        final url = (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))
+            ? rawUrl
+            : '';
+
         return {
-          'block_type': e['block_type'] ?? 'ai_image',
+          'block_type': blockType,
           'app_name': e['app_name'] ?? 'UnknownApp',
           'domain': e['domain'] ?? '',
-          'url': e['url'] ?? '',
+          'url': url,
           'ai_class_label': e['ai_class_label'] ?? 'GENITALIA_EXPOSED',
           'confidence_score': e['confidence_score'] ?? 0.85,
           'timestamp': e['timestamp'] ?? DateTime.now().toUtc().toIso8601String(),

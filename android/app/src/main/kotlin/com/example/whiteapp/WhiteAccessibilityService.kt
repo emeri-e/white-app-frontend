@@ -72,6 +72,11 @@ class WhiteAccessibilityService : AccessibilityService() {
     @Volatile private var cachedBrowsers = setOf<String>()
     private var lastBrowserQueryTime = 0L
 
+    // Overlay cooldown: prevents the flash-dismiss-show loop.
+    // After an overlay is shown, we suppress re-showing for this many ms.
+    private var lastOverlayShowTime = 0L
+    private val overlayCooldownMs = 4000L // 4 second cooldown after overlay is shown
+
     private fun isDisallowedBrowser(packageName: String): Boolean {
         if (packageName == "com.android.chrome" || packageName == "org.mozilla.firefox" || packageName == "com.example.whiteapp") {
             return false
@@ -104,6 +109,32 @@ class WhiteAccessibilityService : AccessibilityService() {
                lowerPkg.contains("via")
     }
 
+    /**
+     * Shows the blocking overlay with cooldown protection.
+     * Prevents the flash-dismiss-show race condition by enforcing a minimum
+     * interval between overlay presentations.
+     */
+    private fun showOverlayWithCooldown(triggeringClass: String, delayBeforeHomeMs: Long = 3000L) {
+        val now = System.currentTimeMillis()
+        if (now - lastOverlayShowTime < overlayCooldownMs) {
+            Log.d("WhiteAccessibility", "Overlay cooldown active, suppressing re-show for $triggeringClass")
+            return
+        }
+        if (BlockingOverlay.isShowing()) {
+            Log.d("WhiteAccessibility", "Overlay already showing, skipping for $triggeringClass")
+            return
+        }
+
+        lastOverlayShowTime = now
+        mainHandler.post {
+            BlockingOverlay.show(this@WhiteAccessibilityService, triggeringClass) {
+                goHome()
+            }
+        }
+        // Single delayed goHome — no duplicates
+        mainHandler.postDelayed({ goHome() }, delayBeforeHomeMs)
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString() ?: return
         
@@ -111,9 +142,13 @@ class WhiteAccessibilityService : AccessibilityService() {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             Log.d("WhiteAccessibility", "ACCESSIBILITY EVENT: Active app changed to [$packageName]")
             
-            // Auto-dismiss active overlay when user switches back to a whitelisted safe app/launcher
-            if (whitelistedApps.contains(packageName)) {
+            // Auto-dismiss active overlay when user switches back to a whitelisted safe app/launcher.
+            // CRITICAL FIX: Do NOT auto-dismiss if the package is our own app (com.example.whiteapp).
+            // The overlay itself triggers window state changes with our package name, causing it to
+            // instantly dismiss itself and let the user see the blocked browser.
+            if (packageName != "com.example.whiteapp" && whitelistedApps.contains(packageName)) {
                 mainHandler.post {
+                    Log.d("WhiteAccessibility", "Auto-dismissing overlay because active app is $packageName")
                     BlockingOverlay.dismiss()
                 }
             }
@@ -121,24 +156,32 @@ class WhiteAccessibilityService : AccessibilityService() {
             // Block disallowed browsers
             if (isDisallowedBrowser(packageName)) {
                 Log.w("WhiteAccessibility", "Blocking unauthorized browser app: $packageName")
-                // Show overlay immediately, then go home after a short delay so user can read the message
-                mainHandler.post {
-                    BlockingOverlay.show(this@WhiteAccessibilityService, "UNSUPPORTED_BROWSER") {
-                        goHome()
-                    }
-                }
-                mainHandler.postDelayed({ goHome() }, 2000) // 2 seconds to read, then force home
+                showOverlayWithCooldown("UNSUPPORTED_BROWSER")
                 return
             }
         }
+
+        // Diagnostic Chrome UI hierarchy dumper to pinpoint Incognito differences
+        if (packageName == "com.android.chrome" && 
+            (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
+             event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)) {
+            val rootNode = rootInActiveWindow
+            if (rootNode != null) {
+                Log.d("WhiteAccessibilityDiagnostics", "--- START CHROME NODE TREE DUMP ---")
+                dumpNodeTreeRecursive(rootNode, 0)
+                Log.d("WhiteAccessibilityDiagnostics", "--- END CHROME NODE TREE DUMP ---")
+            }
+        }
         
-        // Keyword search monitoring on text change
+        // Keyword search monitoring on text change is disabled (handled at proxy level)
+        /*
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
             val textVal = event.text?.joinToString(" ") ?: ""
             if (textVal.isNotEmpty()) {
                 checkForTriggerKeywords(textVal, packageName)
             }
         }
+        */
 
         // Screen visual scanning — only for target apps, not everything
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && scanTargetApps.contains(packageName)) {
@@ -147,18 +190,24 @@ class WhiteAccessibilityService : AccessibilityService() {
 
         val rootNode = rootInActiveWindow ?: return
 
-        // Browser incognito blocker — only check on window state changes to avoid menu false positives
-        if (packageName == "com.android.chrome" && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            inspectChromeIncognito(rootNode)
+        // Browser incognito / private tab blocker — check on both window state and content changes to ensure instant blocking
+        if ((packageName == "com.android.chrome" || packageName == "org.mozilla.firefox") &&
+            (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+             event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)) {
+            if (checkIncognitoOrPrivate(rootNode, packageName)) {
+                showOverlayWithCooldown("INCOGNITO_MODE")
+            }
         }
 
-        // Recursively inspect Chrome nodes for triggering keywords in URL bar
+        // Recursively inspect Chrome nodes for triggering keywords in URL bar is disabled (handled at proxy level)
+        /*
         if (packageName == "com.android.chrome") {
             inspectNodeForKeywordsRecursive(rootNode, packageName)
         }
+        */
     }
 
-    private val triggerKeywords = setOf("porn", "xxx", "sex", "hentai", "nudity", "explicit", "erotic", "nsfw")
+    private val triggerKeywords = java.util.Collections.synchronizedSet(mutableSetOf("porn", "xxx", "sex", "hentai", "nudity", "explicit", "erotic", "nsfw"))
 
     private fun checkForTriggerKeywords(text: String, appName: String) {
         val lowerText = text.lowercase()
@@ -186,11 +235,7 @@ class WhiteAccessibilityService : AccessibilityService() {
                 sendBroadcast(intent)
 
                 // Prevent exposure (go home or show overlay)
-                mainHandler.post {
-                    BlockingOverlay.show(this@WhiteAccessibilityService, "KEYWORD_BLOCKED_OVERLAY") {
-                        goHome()
-                    }
-                }
+                showOverlayWithCooldown("KEYWORD_BLOCKED_OVERLAY")
                 break
             }
         }
@@ -267,11 +312,7 @@ class WhiteAccessibilityService : AccessibilityService() {
                                     Log.d("WhiteAccessibility", "Screen scanner: Analysis result: isBlocked=$isBlocked")
                                     
                                     if (isBlocked) {
-                                        mainHandler.post {
-                                            BlockingOverlay.show(this@WhiteAccessibilityService, "EXPLICIT_CONTENT_OVERLAY") {
-                                                goHome()
-                                            }
-                                        }
+                                        showOverlayWithCooldown("EXPLICIT_CONTENT_OVERLAY")
                                     }
                                 }
                             }
@@ -295,36 +336,70 @@ class WhiteAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun inspectChromeIncognito(node: AccessibilityNodeInfo) {
-        val incognitoNodes = node.findAccessibilityNodeInfosByText("Incognito")
-        if (incognitoNodes.isEmpty()) return
+    /**
+     * Chrome incognito detection.
+     *
+     * IMPORTANT: We ONLY trigger on the actual incognito page content strings:
+     *   - "You've gone Incognito"
+     *   - "You're Incognito" (some Chrome versions)
+     *   - "Incognito mode" in content descriptions
+     *
+     * We do NOT trigger on:
+     *   - The standalone word "Incognito" (this matches "New incognito tab" menu items,
+     *     tab labels, and other Chrome UI elements visible in normal browsing)
+     */
+    private fun checkIncognitoOrPrivate(node: AccessibilityNodeInfo, packageName: String): Boolean {
+        return checkNodeRecursive(node, packageName)
+    }
 
-        // Filter out false positives: menu items like "New incognito tab" contain the word
-        // but don't mean incognito is active. Only trigger if we find a node whose text
-        // is exactly "Incognito" (the tab indicator) or contains "You've gone Incognito".
-        val isActuallyIncognito = incognitoNodes.any { incognitoNode ->
-            val text = incognitoNode.text?.toString() ?: ""
-            val desc = incognitoNode.contentDescription?.toString() ?: ""
-            // Exact standalone "Incognito" label (tab indicator, not menu item)
-            text.equals("Incognito", ignoreCase = true) ||
-            // Chrome's incognito new tab page heading
-            text.contains("You've gone Incognito", ignoreCase = true) ||
-            text.contains("You're Incognito", ignoreCase = true) ||
-            // Content description on incognito indicator
-            desc.equals("Incognito", ignoreCase = true) ||
-            desc.contains("Incognito mode", ignoreCase = true)
-        }
+    private fun checkNodeRecursive(node: AccessibilityNodeInfo?, packageName: String): Boolean {
+        if (node == null) return false
 
-        if (isActuallyIncognito) {
-            Log.w("WhiteAccessibility", "Chrome Incognito Mode block triggered!")
-            // Show overlay, then force home after delay so user can read
-            mainHandler.post {
-                BlockingOverlay.show(this@WhiteAccessibilityService, "INCOGNITO_MODE") {
-                    goHome()
-                }
+        val text = node.text?.toString() ?: ""
+        val desc = node.contentDescription?.toString() ?: ""
+
+        val normalizedText = text.replace("’", "'").lowercase()
+        val normalizedDesc = desc.replace("’", "'").lowercase()
+
+        if (packageName == "com.android.chrome") {
+            // Chrome Incognito checks
+            val isNtp = normalizedText.contains("you've gone incognito") || 
+                         normalizedText.contains("you're incognito") ||
+                         normalizedText.contains("in incognito mode")
+            
+            val isTabSwitcher = normalizedText.contains("search your incognito tabs") || 
+                                 normalizedDesc.contains("incognito tabs")
+            
+            val isMenu = normalizedText.contains("close incognito tabs")
+            
+            // Only trigger on active incognito mode indicator (exclude menu button "New Incognito tab" itself)
+            val isActiveBadge = normalizedDesc.contains("incognito mode") && !normalizedDesc.contains("new")
+
+            if (isNtp || isTabSwitcher || isMenu || isActiveBadge) {
+                Log.w("WhiteAccessibility", "Chrome Incognito Mode detected: text='$text', desc='$desc'")
+                return true
             }
-            mainHandler.postDelayed({ goHome() }, 2000)
+        } else if (packageName == "org.mozilla.firefox") {
+            // Firefox Private Browsing checks
+            val isPrivateNtp = normalizedText.contains("private browsing") || 
+                               normalizedText.contains("private tab") ||
+                               normalizedDesc.contains("private browsing") ||
+                               normalizedDesc.contains("private tab")
+
+            if (isPrivateNtp) {
+                Log.w("WhiteAccessibility", "Firefox Private Browsing detected: text='$text', desc='$desc'")
+                return true
+            }
         }
+
+        // Recursively inspect children
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            if (checkNodeRecursive(child, packageName)) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun goHome() {
@@ -338,6 +413,57 @@ class WhiteAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.i("WhiteAccessibility", "Bodyguard Accessibility Service successfully connected.")
+        loadDynamicKeywords()
+    }
+
+    private fun loadDynamicKeywords() {
+        // Load explicit keywords
+        try {
+            val file = getDatabasePath("blocked_keywords.txt")
+            if (file.exists()) {
+                val lines = file.readLines()
+                    .map { it.lowercase().trim() }
+                    .filter { it.isNotEmpty() }
+                triggerKeywords.addAll(lines)
+                Log.i("WhiteAccessibility", "Loaded ${lines.size} dynamic keywords into accessibility filter. Total keywords: ${triggerKeywords.size}")
+            }
+        } catch (e: Exception) {
+            Log.e("WhiteAccessibility", "Failed to load dynamic keywords: ${e.message}")
+        }
+
+        // Load domain base names as keywords
+        try {
+            val file = getDatabasePath("blocked_domains.txt")
+            if (file.exists()) {
+                val lines = file.readLines()
+                    .map { it.lowercase().trim() }
+                    .filter { it.isNotEmpty() }
+                val baseNames = lines.map { SafeDnsResolver.getDomainBaseName(it) }.filter { it.length > 2 }
+                triggerKeywords.addAll(baseNames)
+                Log.i("WhiteAccessibility", "Extracted and loaded ${baseNames.size} base names from domains as keywords. Total: ${triggerKeywords.size}")
+            }
+        } catch (e: Exception) {
+            Log.e("WhiteAccessibility", "Failed to load domain base names: ${e.message}")
+        }
+    }
+
+    private fun dumpNodeTreeRecursive(node: AccessibilityNodeInfo?, depth: Int) {
+        if (node == null || depth > 20) return
+        val indent = "  ".repeat(depth)
+        val viewId = node.viewIdResourceName ?: "no-id"
+        val text = node.text?.toString() ?: ""
+        val desc = node.contentDescription?.toString() ?: ""
+        val className = node.className?.toString() ?: ""
+        
+        // Print only nodes that have some identifying info (id, text, desc) to keep logs readable
+        if (viewId != "no-id" || text.isNotEmpty() || desc.isNotEmpty()) {
+            Log.d("WhiteAccessibilityDiagnostics", "$indent[Class: $className | ID: $viewId | Text: $text | Desc: $desc]")
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            dumpNodeTreeRecursive(child, depth + 1)
+        }
     }
 
     override fun onDestroy() {

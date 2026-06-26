@@ -311,17 +311,146 @@ class _FilteringSetupScreenState extends State<FilteringSetupScreen> {
     }
   }
 
+  void _showAccessibilityInstructions() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E2E), // Premium dark theme background
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+            border: Border.all(color: Colors.white10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Row(
+                  children: [
+                    Icon(Icons.accessibility_new, color: Colors.orangeAccent, size: 28),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Enable Bodyguard Service',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Android security requires a few quick manual steps to activate the background bodyguard. If the setting is greyed out, please complete Step 1 first:',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _buildInstructionStep(
+                  stepNum: '1',
+                  title: 'If Greyed Out: Unlock Restricted Settings',
+                  description: 'Tap "1. Open App Info" below. Scroll to the bottom (or tap the 3-dots at the top right) and select "Allow restricted settings". Confirm with your PIN.',
+                ),
+                _buildInstructionStep(
+                  stepNum: '2',
+                  title: 'Activate the Guard Service',
+                  description: 'Tap "2. Open Accessibility" below. Tap "Downloaded Apps" (or "Installed Services"), select "WhiteApp", and toggle "Use WhiteApp" to ON.',
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => VpnService.instance.openAppInfoSettings(),
+                        icon: const Icon(Icons.info_outline, size: 18),
+                        label: const Text('1. Open App Info'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white12,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _enableAccessibilityDirect();
+                        },
+                        icon: const Icon(Icons.accessibility, size: 18),
+                        label: const Text('2. Open Accessibility'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orangeAccent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white38,
+                  ),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _enableAccessibility() async {
     if (!Platform.isAndroid) {
       _nextStep();
       return;
     }
+    _showAccessibilityInstructions();
+  }
 
+  Future<void> _enableAccessibilityDirect() async {
     setState(() => _isProcessing = true);
     await VpnService.instance.openAccessibilitySettings();
 
     // Spawn periodic check to see if permission has been granted
     Timer.periodic(const Duration(seconds: 2), (timer) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       final enabled = await VpnService.instance.isAccessibilityServiceEnabled();
       if (enabled) {
         timer.cancel();
@@ -435,6 +564,24 @@ class _FilteringSetupScreenState extends State<FilteringSetupScreen> {
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                       ),
+                      if (_currentStep == 3 && !_a11yActive) ...[
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () {
+                            _nextStep();
+                          },
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white60,
+                          ),
+                          child: const Text(
+                            'Skip this step (If setting is locked/unsupported)',
+                            style: TextStyle(
+                              fontSize: 14,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 const SizedBox(height: 20),

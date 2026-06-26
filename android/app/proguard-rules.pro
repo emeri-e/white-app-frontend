@@ -22,3 +22,8 @@
 -dontwarn com.aayushatharva.brotli4j.**
 -dontwarn com.jcraft.jzlib.**
 -dontwarn reactor.blockhound.**
+
+# BouncyCastle Rules (critical for CA generation in release builds)
+-keep class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**
+-dontwarn javax.naming.**

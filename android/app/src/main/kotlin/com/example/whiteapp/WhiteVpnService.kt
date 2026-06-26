@@ -178,12 +178,24 @@ class WhiteVpnService : VpnService() {
             .setMtu(1500)
             .addAddress("10.0.0.2", 32)
 
-        // Prevent routing loops by excluding our own app from the VPN tunnel
-        try {
-            builder.addDisallowedApplication(packageName)
-            Log.i(TAG, "Excluded $packageName from VPN tunnel routing loops.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to exclude our own app package: ${e.message}")
+        // Disallow cert-pinned Google apps and our own app from the VPN tunnel to prevent connection failures
+        val disallowedApps = listOf(
+            packageName,
+            "com.google.android.youtube",
+            "com.google.android.apps.maps",
+            "com.android.vending",
+            "com.google.android.gms",
+            "com.google.android.apps.photos",
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.apps.messaging"
+        )
+        for (app in disallowedApps) {
+            try {
+                builder.addDisallowedApplication(app)
+                Log.i(TAG, "Excluded $app from VPN tunnel.")
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not exclude package $app: ${e.message}")
+            }
         }
 
         // Configure system-wide HTTP Proxy routing to intercept HTTP/HTTPS traffic (Option C)
@@ -200,7 +212,29 @@ class WhiteVpnService : VpnService() {
                     "whatsapp.com", "*.whatsapp.com", "whatsapp.net", "*.whatsapp.net",
                     "tiktok.com", "*.tiktok.com", "tiktokcdn.com", "*.tiktokcdn.com",
                     "twitter.com", "*.twitter.com", "twimg.com", "*.twimg.com", "t.co", "*.t.co",
-                    "youtube.com", "*.youtube.com", "googlevideo.com", "*.googlevideo.com", "ytimg.com", "*.ytimg.com"
+                    // Google Apps & APIs (bypass proxy to prevent SSL pinning crashes)
+                    "youtube.com", "*.youtube.com",
+                    "googlevideo.com", "*.googlevideo.com",
+                    "ytimg.com", "*.ytimg.com",
+                    "ggpht.com", "*.ggpht.com",
+                    "googleapis.com", "*.googleapis.com",
+                    "gvt1.com", "*.gvt1.com",
+                    "android.com", "*.android.com",
+                    "gmail.com", "*.gmail.com",
+                    // Specific google.com subdomains with strict cert pinning
+                    "accounts.google.com",
+                    "play.google.com",
+                    "android.clients.google.com",
+                    "clients.google.com",
+                    "clients1.google.com",
+                    "clients2.google.com",
+                    "clients3.google.com",
+                    "clients4.google.com",
+                    "clients5.google.com",
+                    "clients6.google.com",
+                    "apis.google.com",
+                    "maps.google.com",
+                    "mail.google.com"
                 )
                 val proxyInfo = android.net.ProxyInfo.buildDirectProxy("127.0.0.1", 8888, exclusionList)
                 builder.setHttpProxy(proxyInfo)

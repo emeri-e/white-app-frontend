@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path_pkg;
 import 'package:crypto/crypto.dart';
 import 'package:whiteapp/core/constants/env.dart';
 import 'package:whiteapp/core/services/api_service.dart';
+import 'package:flutter/services.dart';
 import 'package:whiteapp/features/vpn/services/ios_screentime_service.dart';
 
 class BlocklistService {
@@ -186,6 +187,17 @@ class BlocklistService {
       print('Failed to write blocked_domains.txt: $e');
     }
 
+    // Save keywords to a local text file to avoid SQLite performance bottleneck in proxy
+    try {
+      final dbPath = await getDatabasesPath();
+      final txtFile = File(path_pkg.join(dbPath, 'blocked_keywords.txt'));
+      final content = keywords.map((k) => k.toString().trim().toLowerCase()).join('\n');
+      await txtFile.writeAsString(content);
+      print('Successfully wrote ${keywords.length} keywords to blocked_keywords.txt');
+    } catch (e) {
+      print('Failed to write blocked_keywords.txt: $e');
+    }
+
     await db.transaction((txn) async {
       // Clear current lists (except blocked_domains since we don't store it in SQLite anymore)
       await txn.delete('blocked_keywords');
@@ -238,6 +250,14 @@ class BlocklistService {
     if (Platform.isIOS) {
       final List<String> domainsList = await getBlockedDomains();
       await IosScreenTimeService.instance.updateBlockedDomains(domainsList);
+    } else if (Platform.isAndroid) {
+      try {
+        const channel = MethodChannel('com.whiteapp/vpn');
+        await channel.invokeMethod('reloadBlocklist');
+        print('Signaled native proxy to reload blocklist files.');
+      } catch (e) {
+        print('Failed to notify native proxy of blocklist reload: $e');
+      }
     }
 
     print('Blocklist SQLite updated successfully to v$version!');

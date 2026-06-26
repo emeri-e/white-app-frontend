@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Trust user-installed CA certificates (required for WhiteApp's local MITM proxy).
+         On Android 7.0+ (API 24+), apps do not trust user-installed CAs by default.
+         This config re-enables trust so the local content filtering proxy can
+         inspect HTTPS traffic without "connection not private" errors.
+         
+         NOTE: This applies to ALL build types (debug + release) because
+         WhiteApp requires the local proxy CA to function in production too. -->
+    <base-config>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

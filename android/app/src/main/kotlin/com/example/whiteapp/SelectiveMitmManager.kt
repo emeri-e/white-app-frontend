@@ -26,7 +26,16 @@ class SelectiveMitmManager(authority: Authority) : MitmManager {
         "tiktokcdn.com",
         "twitter.com",
         "twimg.com",
-        "t.co"
+        "t.co",
+        // Google Services & Pinned App bypasses (maps, youtube, play store, gmail, system sync)
+        "youtube.com",
+        "googlevideo.com",
+        "ytimg.com",
+        "ggpht.com",
+        "googleapis.com",
+        "gvt1.com",
+        "android.com",
+        "gmail.com"
     )
 
     private fun shouldBypass(host: String?): Boolean {

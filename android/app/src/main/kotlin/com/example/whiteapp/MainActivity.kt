@@ -30,6 +30,10 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Pre-load blocklist in memory on a background thread to prevent UI hang on startup
+        Thread {
+            SafeDnsResolver.loadBlocklist(this)
+        }.start()
         handleIntent(intent)
     }
 
@@ -143,8 +147,20 @@ class MainActivity : FlutterActivity() {
                     startActivity(intent)
                     result.success(true)
                 }
+                "openAppInfoSettings" -> {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = android.net.Uri.parse("package:$packageName")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(intent)
+                    result.success(true)
+                }
                 "flushNativeBlockEvents" -> {
                     result.success(BlockEventLogger.flushEvents(this))
+                }
+                "reloadBlocklist" -> {
+                    SafeDnsResolver.loadBlocklist(this)
+                    result.success(true)
                 }
                 "startCameraRollMonitoring" -> {
                     CameraRollMonitor.startMonitoring(this)

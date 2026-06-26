@@ -136,4 +136,14 @@ class VpnService {
       print('Failed to open settings: ${e.message}');
     }
   }
+
+  /// Open Android App Info Settings screen to allow restricted settings
+  Future<void> openAppInfoSettings() async {
+    if (kIsWeb) return;
+    try {
+      await _channel.invokeMethod('openAppInfoSettings');
+    } on PlatformException catch (e) {
+      print('Failed to open App Info settings: ${e.message}');
+    }
+  }
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,6 +17,30 @@ class AIModelUpdater {
 
   static final AIModelUpdater instance = AIModelUpdater._internal();
   AIModelUpdater._internal();
+
+  /// Ensures that the default model is extracted to local storage (app support directory)
+  /// so that the native Android process can read it directly (essential for debug builds
+  /// where native assets cannot be read via AssetManager).
+  Future<void> ensureLocalModel() async {
+    if (kIsWeb) return;
+    try {
+      final supportDir = await getApplicationSupportDirectory();
+      final modelFile = File('${supportDir.path}/nudenet_320n.tflite');
+      if (!await modelFile.exists()) {
+        print('AIModelUpdater: Local model file not found. Extracting default model from assets...');
+        final bytesData = await rootBundle.load('assets/models/nudenet_320n.tflite');
+        final bytes = bytesData.buffer.asUint8List();
+        // Create directory if it doesn't exist
+        await modelFile.parent.create(recursive: true);
+        await modelFile.writeAsBytes(bytes, flush: true);
+        print('AIModelUpdater: Extracted default model successfully to ${modelFile.path}');
+      } else {
+        print('AIModelUpdater: Local model already exists at ${modelFile.path}');
+      }
+    } catch (e) {
+      print('AIModelUpdater: Failed to extract local model: $e');
+    }
+  }
 
   /// Gets the currently installed version number from shared preferences.
   Future<int> getCurrentVersion() async {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import org.tensorflow.lite.Interpreter
+import java.io.File
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -20,7 +21,7 @@ data class NativeDetection(
 
 class NudeNetClassifier(private val context: Context) {
     private var interpreter: Interpreter? = null
-    private val modelFilename = "models/nudenet_320n.tflite"
+    private val modelFilename = "flutter_assets/assets/models/nudenet_320n.tflite"
 
     private val labels = arrayOf(
         "FEMALE_GENITALIA_COVERED",
@@ -44,19 +45,40 @@ class NudeNetClassifier(private val context: Context) {
     )
 
     init {
+        var loaded = false
+
+        // 1. Try to load from the extracted local file path (works in both debug and release)
         try {
-            val assetManager = context.assets
-            val fileDescriptor = assetManager.openFd(modelFilename)
-            val fileInputStream = FileInputStream(fileDescriptor.fileDescriptor)
-            val fileChannel = fileInputStream.channel
-            val startOffset = fileDescriptor.startOffset
-            val declaredLength = fileDescriptor.declaredLength
-            val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
-            
-            interpreter = Interpreter(mappedByteBuffer)
-            Log.i("NudeNetClassifier", "Android TFLite model loaded successfully")
+            val localModelFile = File(context.filesDir, "nudenet_320n.tflite")
+            if (localModelFile.exists()) {
+                val fileInputStream = FileInputStream(localModelFile)
+                val fileChannel = fileInputStream.channel
+                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, localModelFile.length())
+                interpreter = Interpreter(mappedByteBuffer)
+                Log.i("NudeNetClassifier", "Loaded TFLite model from local files directory: ${localModelFile.absolutePath}")
+                loaded = true
+            }
         } catch (e: Exception) {
-            Log.e("NudeNetClassifier", "Error loading model: ${e.message}")
+            Log.w("NudeNetClassifier", "Could not load model from local file path: ${e.message}")
+        }
+
+        // 2. Try to load from assets (works in release builds)
+        if (!loaded) {
+            try {
+                val assetManager = context.assets
+                val fileDescriptor = assetManager.openFd(modelFilename)
+                val fileInputStream = FileInputStream(fileDescriptor.fileDescriptor)
+                val fileChannel = fileInputStream.channel
+                val startOffset = fileDescriptor.startOffset
+                val declaredLength = fileDescriptor.declaredLength
+                val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+                
+                interpreter = Interpreter(mappedByteBuffer)
+                Log.i("NudeNetClassifier", "Loaded TFLite model from assets: $modelFilename")
+                loaded = true
+            } catch (e: Exception) {
+                Log.e("NudeNetClassifier", "Error loading model: ${e.message}")
+            }
         }
     }
 

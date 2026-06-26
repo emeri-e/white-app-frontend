@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.net.Uri
 import android.security.KeyChain
 import android.util.Log
 import android.widget.Toast
@@ -84,45 +85,62 @@ object CertificateManager {
      */
     fun isCertificateInstalled(context: Context): Boolean {
         try {
-            // 1. Ensure local CA files always exist by calling getOrGenerateAuthority.
-            //    This will restore from backup or generate new files if needed.
-            getOrGenerateAuthority(context)
+            ensureBouncyCastleProvider()
 
             val caDir = File(context.filesDir, "ca")
             val pemFile = File(caDir, "$ALIAS.pem")
+            val p12File = File(caDir, "$ALIAS.p12")
 
-            // 2. If we still don't have a local PEM (generation somehow failed), not installed
-            if (!pemFile.exists()) {
-                Log.w(TAG, "Local CA PEM file does not exist even after generation. Reporting as NOT installed.")
-                return false
+            // 1. If local files don't exist, try ONLY to restore from backup.
+            //    DO NOT generate a new cert here — that would create a new keypair
+            //    that won't match the certificate the user already installed.
+            if (!pemFile.exists() || !p12File.exists()) {
+                Log.i(TAG, "Local CA files missing. Checking for backup files to restore before verifying trust store...")
+                if (!caDir.exists()) caDir.mkdirs()
+                restoreBackupFiles(context, pemFile, p12File)
             }
 
-            // 3. Load our local CA certificate
-            val pemBytes = pemFile.readBytes()
-            val cf = CertificateFactory.getInstance("X.509")
-            val localCert = cf.generateCertificate(ByteArrayInputStream(pemBytes)) as? X509Certificate
-            if (localCert == null) {
-                Log.e(TAG, "Failed to parse local PEM certificate. Reporting as NOT installed.")
-                return false
-            }
+            // 2. If we have a local PEM, compare its public key against AndroidCAStore
+            if (pemFile.exists()) {
+                val pemBytes = pemFile.readBytes()
+                val cf = CertificateFactory.getInstance("X.509")
+                val localCert = cf.generateCertificate(ByteArrayInputStream(pemBytes)) as? X509Certificate
+                if (localCert != null) {
+                    val localFingerprint = getFingerprint(localCert)
+                    Log.i(TAG, "Local CA fingerprint (SHA-256): $localFingerprint")
 
-            // 4. Check if a certificate with matching public key is installed in the system trust store
-            val keyStore = KeyStore.getInstance("AndroidCAStore")
-            keyStore.load(null, null)
-            val aliases = keyStore.aliases()
-            while (aliases.hasMoreElements()) {
-                val alias = aliases.nextElement() as String
-                val cert = keyStore.getCertificate(alias) as? X509Certificate
-                if (cert != null && cert.publicKey == localCert.publicKey) {
-                    Log.i(TAG, "Verified: Matching WhiteApp Root CA is installed and active in AndroidCAStore ($alias).")
-                    return true
+                    val keyStore = KeyStore.getInstance("AndroidCAStore")
+                    keyStore.load(null, null)
+                    val aliases = keyStore.aliases()
+                    while (aliases.hasMoreElements()) {
+                        val alias = aliases.nextElement() as String
+                        val cert = keyStore.getCertificate(alias) as? X509Certificate ?: continue
+                        if (getFingerprint(cert) == localFingerprint) {
+                            Log.i(TAG, "Verified: Matching WhiteApp Root CA is installed in AndroidCAStore (alias=$alias).")
+                            return true
+                        }
+                    }
+                    Log.w(TAG, "No matching certificate found in AndroidCAStore for our local fingerprint.")
+                    return false
                 }
             }
-            Log.w(TAG, "No matching certificate found in AndroidCAStore for our local public key.")
+
+            // 3. No local PEM at all — We must return false because without the local private key (P12),
+            //    we cannot run the MITM proxy even if the user still has an old certificate installed in settings.
+            Log.w(TAG, "No local PEM available and backup restoration was unsuccessful. Reporting as not installed.")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to check AndroidCAStore: ${e.message}", e)
         }
         return false
+    }
+
+    /**
+     * Returns the SHA-256 fingerprint of an X509Certificate for reliable comparison.
+     */
+    private fun getFingerprint(cert: X509Certificate): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        val digest = md.digest(cert.encoded)
+        return digest.joinToString(":") { "%02X".format(it) }
     }
 
     /**
@@ -215,7 +233,7 @@ object CertificateManager {
             val cert = cf.generateCertificate(ByteArrayInputStream(pemBytes)) as X509Certificate
             val derBytes = cert.encoded
 
-            val fileName = "whiteapp-ca.crt"
+            var fileName = "whiteapp-ca.crt"
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
@@ -235,7 +253,28 @@ object CertificateManager {
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 }
 
-                val insertedUri = resolver.insert(uri, contentValues)
+                var insertedUri: Uri? = null
+                try {
+                    insertedUri = resolver.insert(uri, contentValues)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to insert default filename: ${e.message}. Trying with timestamp.")
+                }
+
+                if (insertedUri == null) {
+                    // Fallback to timestamped name to avoid naming/ownership conflicts
+                    fileName = "whiteapp-ca-${System.currentTimeMillis() / 1000}.crt"
+                    val fallbackValues = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                        put(MediaStore.MediaColumns.MIME_TYPE, "application/x-x509-ca-cert")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    }
+                    try {
+                        insertedUri = resolver.insert(uri, fallbackValues)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to insert fallback timestamp filename: ${e.message}")
+                    }
+                }
+
                 if (insertedUri != null) {
                     resolver.openOutputStream(insertedUri)?.use { outputStream ->
                         outputStream.write(derBytes)
@@ -326,10 +365,185 @@ object CertificateManager {
         }
     }
 
+    private data class DecryptedBackup(
+        val uri: Uri,
+        val displayName: String,
+        val dateModified: Long,
+        val decryptedBytes: ByteArray,
+        val fingerprint: String
+    )
+
+    private fun extractFingerprintFromP12(decryptedBytes: ByteArray): String? {
+        return try {
+            val keyStore = KeyStore.getInstance("PKCS12")
+            keyStore.load(ByteArrayInputStream(decryptedBytes), PASSWORD.toCharArray())
+            val aliases = keyStore.aliases()
+            if (aliases.hasMoreElements()) {
+                val alias = aliases.nextElement()
+                val cert = keyStore.getCertificate(alias) as? X509Certificate
+                if (cert != null) {
+                    getFingerprint(cert)
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun extractFingerprintFromPem(decryptedBytes: ByteArray): String? {
+        return try {
+            val cf = CertificateFactory.getInstance("X.509")
+            val cert = cf.generateCertificate(ByteArrayInputStream(decryptedBytes)) as? X509Certificate
+            if (cert != null) {
+                getFingerprint(cert)
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun readBytesFromUri(context: Context, uri: Uri): ByteArray? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read bytes from URI $uri: ${e.message}")
+            null
+        }
+    }
+
+    private fun isFingerprintInstalled(fingerprint: String): Boolean {
+        try {
+            val keyStore = KeyStore.getInstance("AndroidCAStore")
+            keyStore.load(null, null)
+            val aliases = keyStore.aliases()
+            while (aliases.hasMoreElements()) {
+                val alias = aliases.nextElement() as String
+                val cert = keyStore.getCertificate(alias) as? X509Certificate ?: continue
+                if (getFingerprint(cert) == fingerprint) {
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to check AndroidCAStore for fingerprint: ${e.message}")
+        }
+        return false
+    }
+
     private fun restoreBackupFiles(context: Context, pemFile: File, p12File: File): Boolean {
-        val pemRestored = restoreBackupFile(context, pemFile, PEM_BACKUP_NAME)
-        val p12Restored = restoreBackupFile(context, p12File, P12_BACKUP_NAME)
-        return pemRestored && p12Restored
+        try {
+            val keySeed = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "default_seed"
+            val rawCandidates = mutableListOf<Triple<Uri, String, Long>>() // Triple(Uri, displayName, dateModified)
+            val uri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val projection = arrayOf(
+                    MediaStore.MediaColumns._ID,
+                    MediaStore.MediaColumns.DISPLAY_NAME,
+                    MediaStore.MediaColumns.DATE_MODIFIED
+                )
+                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+                val selectionArgs = arrayOf("whiteapp_ca_%")
+                
+                context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+                        val name = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)) ?: ""
+                        val dateModified = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED))
+                        val fileUri = android.content.ContentUris.withAppendedId(uri, id)
+                        rawCandidates.add(Triple(fileUri, name, dateModified))
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (downloadDir.exists()) {
+                    val files = downloadDir.listFiles()
+                    if (files != null) {
+                        for (file in files) {
+                            val name = file.name
+                            if (name.startsWith("whiteapp_ca_") && name.endsWith(".bak")) {
+                                val fileUri = Uri.fromFile(file)
+                                rawCandidates.add(Triple(fileUri, name, file.lastModified() / 1000))
+                            }
+                        }
+                    }
+                }
+            }
+
+            Log.i(TAG, "Found ${rawCandidates.size} raw backup files matching 'whiteapp_ca_%' in Downloads.")
+
+            val pemBackups = mutableListOf<DecryptedBackup>()
+            val p12Backups = mutableListOf<DecryptedBackup>()
+
+            for (candidate in rawCandidates) {
+                val fileUri = candidate.first
+                val name = candidate.second
+                val dateModified = candidate.third
+
+                val encryptedBytes = readBytesFromUri(context, fileUri) ?: continue
+                val decryptedBytes = try {
+                    CryptoUtils.decrypt(encryptedBytes, keySeed)
+                } catch (e: Exception) {
+                    null
+                } ?: continue
+
+                if (name.startsWith("whiteapp_ca_pem")) {
+                    val fingerprint = extractFingerprintFromPem(decryptedBytes)
+                    if (fingerprint != null) {
+                        pemBackups.add(DecryptedBackup(fileUri, name, dateModified, decryptedBytes, fingerprint))
+                    }
+                } else if (name.startsWith("whiteapp_ca_p12")) {
+                    val fingerprint = extractFingerprintFromP12(decryptedBytes)
+                    if (fingerprint != null) {
+                        p12Backups.add(DecryptedBackup(fileUri, name, dateModified, decryptedBytes, fingerprint))
+                    }
+                }
+            }
+
+            Log.i(TAG, "Successfully decrypted and parsed ${pemBackups.size} PEM backups and ${p12Backups.size} P12 backups.")
+
+            // Match PEM and P12 backups by certificate fingerprint
+            val matchedPairs = mutableListOf<Pair<DecryptedBackup, DecryptedBackup>>() // Pair(PEM, P12)
+            for (pemBackup in pemBackups) {
+                val p12Backup = p12Backups.find { it.fingerprint == pemBackup.fingerprint }
+                if (p12Backup != null) {
+                    matchedPairs.add(Pair(pemBackup, p12Backup))
+                }
+            }
+
+            Log.i(TAG, "Found ${matchedPairs.size} matching PEM/P12 certificate-key pairs in backups.")
+
+            var selectedPair: Pair<DecryptedBackup, DecryptedBackup>? = null
+
+            // Sort matched pairs by PEM date modified descending (newest first)
+            val sortedPairs = matchedPairs.sortedByDescending { it.first.dateModified }
+
+            // Step A: Find the newest pair matching a certificate currently installed/trusted in Android settings
+            for (pair in sortedPairs) {
+                if (isFingerprintInstalled(pair.first.fingerprint)) {
+                    selectedPair = pair
+                    Log.i(TAG, "Found backup pair matching currently installed certificate (fingerprint: ${pair.first.fingerprint}, pem: ${pair.first.displayName}, p12: ${pair.second.displayName}). Selecting for restoration.")
+                    break
+                }
+            }
+
+            // Step B: Fallback - pick the newest pair overall
+            if (selectedPair == null && sortedPairs.isNotEmpty()) {
+                selectedPair = sortedPairs.first()
+                Log.w(TAG, "No backup pair matched an installed certificate. Selecting the newest overall backup pair (pem: ${selectedPair.first.displayName}, p12: ${selectedPair.second.displayName}) for restoration.")
+            }
+
+            // Write decrypted bytes to app's secure files directory
+            if (selectedPair != null) {
+                pemFile.writeBytes(selectedPair.first.decryptedBytes)
+                p12File.writeBytes(selectedPair.second.decryptedBytes)
+                Log.i(TAG, "Successfully restored matching certificate pair: PEM=${selectedPair.first.displayName}, P12=${selectedPair.second.displayName}")
+                return true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error restoring backup files: ${e.message}", e)
+        }
+        return false
     }
 
     private fun saveBackupFile(context: Context, sourceFile: File, displayName: String) {
@@ -353,7 +567,30 @@ object CertificateManager {
                     put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 }
-                val insertedUri = resolver.insert(uri, contentValues)
+
+                var insertedUri: Uri? = null
+                try {
+                    insertedUri = resolver.insert(uri, contentValues)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to insert default backup: ${e.message}. Trying with timestamp.")
+                }
+
+                if (insertedUri == null) {
+                    val nameWithoutExtension = displayName.substringBeforeLast(".")
+                    val extension = displayName.substringAfterLast(".")
+                    val fallbackName = "${nameWithoutExtension}_${System.currentTimeMillis() / 1000}.$extension"
+                    val fallbackValues = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, fallbackName)
+                        put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    }
+                    try {
+                        insertedUri = resolver.insert(uri, fallbackValues)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to insert fallback timestamp backup: ${e.message}")
+                    }
+                }
+
                 if (insertedUri != null) {
                     resolver.openOutputStream(insertedUri)?.use { output ->
                         output.write(encryptedBytes)
@@ -372,46 +609,4 @@ object CertificateManager {
         }
     }
 
-    private fun restoreBackupFile(context: Context, destFile: File, displayName: String): Boolean {
-        try {
-            val keySeed = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "default_seed"
-            val resolver = context.contentResolver
-            
-            val backupBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val uri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-                val projection = arrayOf(MediaStore.MediaColumns._ID)
-                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
-                val selectionArgs = arrayOf(displayName)
-                var fileUri: android.net.Uri? = null
-                
-                resolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
-                        fileUri = android.content.ContentUris.withAppendedId(uri, id)
-                    }
-                }
-                
-                fileUri?.let { targetUri ->
-                    resolver.openInputStream(targetUri)?.use { input ->
-                        input.readBytes()
-                    }
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val targetFile = File(downloadDir, displayName)
-                if (targetFile.exists()) targetFile.readBytes() else null
-            }
-
-            if (backupBytes != null && backupBytes.isNotEmpty()) {
-                val decryptedBytes = CryptoUtils.decrypt(backupBytes, keySeed)
-                destFile.writeBytes(decryptedBytes)
-                Log.i(TAG, "Successfully restored CA backup file: $displayName")
-                return true
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to restore backup file $displayName: ${e.message}", e)
-        }
-        return false
-    }
 }

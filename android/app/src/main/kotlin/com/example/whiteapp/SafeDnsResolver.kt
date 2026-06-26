@@ -25,6 +25,9 @@ object SafeDnsResolver {
     // In-memory set of custom blocked domains (loaded from blocked_domains.txt)
     private val blockedDomains = ConcurrentHashMap.newKeySet<String>()
 
+    // In-memory set of custom blocked keywords (loaded from blocked_keywords.txt + extracted domain base names)
+    private val blockedKeywords = ConcurrentHashMap.newKeySet<String>()
+
     // In-memory DNS cache: hostname (lowercase) -> Cached IP and expiration timestamp
     private val dnsCache = ConcurrentHashMap<String, CachedDnsResponse>()
 
@@ -37,30 +40,143 @@ object SafeDnsResolver {
     private val IPV4_PATTERN = Regex("""^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$""")
 
     /**
-     * Loads the domain blocklist from the local blocked_domains.txt file.
+     * Extracts the base name (domain label) from a domain.
+     * e.g. xvideos.com -> xvideos
+     *      www.pornhub.com -> pornhub
+     *      pornhub.co.uk -> pornhub
+     */
+    fun getDomainBaseName(domain: String): String {
+        val parts = domain.split(".")
+        if (parts.size < 2) return domain
+        val secondToLast = parts[parts.size - 2]
+        val commonTldComps = setOf("com", "co", "org", "net", "edu", "gov", "mil", "asn", "id", "or")
+        if (parts.size >= 3 && commonTldComps.contains(secondToLast)) {
+            return parts[parts.size - 3]
+        }
+        return secondToLast
+    }
+
+    /**
+     * Loads the domain blocklist and keywords from local files.
      */
     fun loadBlocklist(context: Context) {
+        blockedDomains.clear()
+        blockedKeywords.clear()
+
+        val domainsFile = context.getDatabasePath("blocked_domains.txt")
+        val keywordsFile = context.getDatabasePath("blocked_keywords.txt")
+
+        // Ensure parent database directory exists
+        val dbDir = domainsFile.parentFile
+        if (dbDir != null && !dbDir.exists()) {
+            dbDir.mkdirs()
+            Log.i(TAG, "Created databases directory: ${dbDir.absolutePath}")
+        }
+
+        // Write default fallback domains if the file does not exist
+        if (!domainsFile.exists()) {
+            try {
+                val defaultDomains = listOf(
+                    "pornhub.com",
+                    "xvideos.com",
+                    "xnxx.com",
+                    "rule34.xxx",
+                    "youporn.com",
+                    "redtube.com",
+                    "porn.com",
+                    "hentai.org",
+                    "stripchat.com",
+                    "livejasmin.com",
+                    "chaturbate.com",
+                    "onlyfans.com",
+                    "fansly.com",
+                    "xhamster.com",
+                    "spankbang.com",
+                    "tube8.com",
+                    "tnaflix.com",
+                    "motherless.com",
+                    "youjizz.com",
+                    "hqporn.com",
+                    "boundhub.com"
+                )
+                domainsFile.writeText(defaultDomains.joinToString("\n"))
+                Log.i(TAG, "Created fallback blocked_domains.txt file with ${defaultDomains.size} domains.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to write fallback domains file: ${e.message}", e)
+            }
+        }
+
+        // Write default fallback keywords if the file does not exist
+        if (!keywordsFile.exists()) {
+            try {
+                val defaultKeywords = listOf(
+                    "porn",
+                    "pornhub",
+                    "xvideos",
+                    "xnxx",
+                    "rule34",
+                    "hentai",
+                    "stripchat",
+                    "chaturbate",
+                    "xxx",
+                    "sex",
+                    "nude",
+                    "erotic",
+                    "onlyfans",
+                    "fansly",
+                    "xhamster",
+                    "spankbang"
+                )
+                keywordsFile.writeText(defaultKeywords.joinToString("\n"))
+                Log.i(TAG, "Created fallback blocked_keywords.txt file with ${defaultKeywords.size} keywords.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to write fallback keywords file: ${e.message}", e)
+            }
+        }
+
+        // 1. Load domains from file
         try {
-            val file = context.getDatabasePath("blocked_domains.txt")
-            if (file.exists()) {
-                val lines = file.readLines()
-                    .map { it.lowercase().trim() }
-                    .filter { it.isNotEmpty() }
-                blockedDomains.clear()
-                blockedDomains.addAll(lines)
-                Log.i(TAG, "Loaded ${blockedDomains.size} domains into local DNS blocklist.")
-            } else {
-                Log.w(TAG, "Local DNS blocklist file does not exist.")
+            if (domainsFile.exists()) {
+                domainsFile.bufferedReader().useLines { lines ->
+                    lines.forEach { line ->
+                        val cleaned = line.lowercase().trim()
+                        if (cleaned.isNotEmpty()) {
+                            blockedDomains.add(cleaned)
+                            val baseName = getDomainBaseName(cleaned)
+                            if (baseName.length > 2) {
+                                blockedKeywords.add(baseName)
+                            }
+                        }
+                    }
+                }
+                Log.i(TAG, "Loaded ${blockedDomains.size} domains and extracted keywords into memory.")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load local DNS blocklist: ${e.message}", e)
+        }
+
+        // 2. Load explicit keywords from file
+        try {
+            if (keywordsFile.exists()) {
+                keywordsFile.bufferedReader().useLines { lines ->
+                    lines.forEach { line ->
+                        val cleaned = line.lowercase().trim()
+                        if (cleaned.isNotEmpty()) {
+                            blockedKeywords.add(cleaned)
+                        }
+                    }
+                }
+                Log.i(TAG, "Loaded explicit keywords. Total blocked keywords: ${blockedKeywords.size}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load local keywords: ${e.message}", e)
         }
     }
 
     /**
      * Checks if a domain or any of its parent subdomains are blocked.
      */
-    private fun isDomainBlocked(host: String): Boolean {
+    fun isDomainBlocked(host: String): Boolean {
         if (blockedDomains.isEmpty()) return false
         var target = host.lowercase().trim()
         
@@ -73,6 +189,20 @@ object SafeDnsResolver {
             target = parts[1]
         }
         return blockedDomains.contains(target)
+    }
+
+    /**
+     * Checks if the given text contains any blocked keyword.
+     */
+    fun isKeywordBlocked(text: String): Boolean {
+        if (blockedKeywords.isEmpty()) return false
+        val lowerText = text.lowercase().trim()
+        for (kw in blockedKeywords) {
+            if (lowerText.contains(kw)) {
+                return true
+            }
+        }
+        return false
     }
 
     /**
@@ -91,8 +221,17 @@ object SafeDnsResolver {
 
         // Check custom local blocklist first
         if (isDomainBlocked(lowercaseHost)) {
-            Log.w(TAG, "DNS Blocked (Local policy): $lowercaseHost")
-            throw UnknownHostException("Domain blocked by local DNS policy: $lowercaseHost")
+            Log.w(TAG, "DNS Blocked (Local policy): $lowercaseHost - Resolving via standard DNS for redirection")
+            try {
+                // Query 1.1.1.1 instead of 1.1.1.3 to get the real IP of the blocked domain.
+                // This is required so the proxy can establish the SSL connection with the upstream,
+                // generate/forge the certificate, and then return the HTTP redirect inside clientToProxyRequest.
+                return resolveDirect(lowercaseHost, "1.1.1.1")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to resolve real IP for blocked domain: ${e.message}")
+                // Fallback to a default public IP
+                return InetAddress.getByName("1.1.1.1")
+            }
         }
 
         val now = System.currentTimeMillis()
@@ -117,9 +256,9 @@ object SafeDnsResolver {
     }
 
     /**
-     * Queries 1.1.1.3 directly using standard UDP DNS protocol.
+     * Queries a DNS server directly using standard UDP DNS protocol.
      */
-    private fun resolveDirect(host: String): InetAddress {
+    private fun resolveDirect(host: String, dnsServer: String = DNS_SERVER): InetAddress {
         val socket = DatagramSocket()
         socket.soTimeout = TIMEOUT_MS
 
@@ -134,7 +273,7 @@ object SafeDnsResolver {
 
         try {
             val query = buildDnsQuery(host)
-            val dnsIp = InetAddress.getByName(DNS_SERVER)
+            val dnsIp = InetAddress.getByName(dnsServer)
             val packet = DatagramPacket(query, query.size, dnsIp, DNS_PORT)
             socket.send(packet)
 
