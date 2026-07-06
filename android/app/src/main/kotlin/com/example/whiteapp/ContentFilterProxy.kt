@@ -27,6 +27,9 @@ object ContentFilterProxy {
                 // Load local DNS blocklist
                 SafeDnsResolver.loadBlocklist(context)
 
+                // Clear any dynamically learned MITM bypasses from previous sessions
+                SelectiveMitmManager.clearDynamicBypasses()
+
                 // Get or generate Root CA authority parameters
                 val authority = CertificateManager.getOrGenerateAuthority(context)
 

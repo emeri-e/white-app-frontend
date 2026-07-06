@@ -336,6 +336,25 @@ class ImageScanFilter(
         return null
     }
 
+    /**
+     * Called by LittleProxy when the proxy-to-server connection fails.
+     * This includes SSL handshake failures caused by certificate pinning.
+     *
+     * When detected, we record the host in SelectiveMitmManager's dynamic bypass set
+     * so all future connections to this host will passthrough without MITM.
+     * This implements the "Conservative Strategy" from mitmproxy's tls_passthrough.py.
+     */
+    override fun proxyToServerConnectionFailed() {
+        try {
+            val host = originalRequest?.headers()?.get("Host")?.split(":")?.firstOrNull()
+            if (!host.isNullOrBlank()) {
+                SelectiveMitmManager.recordFailure(host)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error recording connection failure: ${e.message}")
+        }
+    }
+
     private fun getRedirectBaseUrl(): String {
         try {
             val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
