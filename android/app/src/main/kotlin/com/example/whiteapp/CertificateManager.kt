@@ -41,6 +41,9 @@ object CertificateManager {
     private const val PEM_BACKUP_NAME = "whiteapp_ca_pem.bak"
     private const val P12_BACKUP_NAME = "whiteapp_ca_p12.bak"
 
+    @Volatile
+    private var isBcRegistered = false
+
     private object CryptoUtils {
         private const val ALGORITHM = "AES"
         private const val TRANSFORMATION = "AES/ECB/PKCS5Padding"
@@ -70,12 +73,25 @@ object CertificateManager {
      * library at highest priority BEFORE any crypto operations.
      */
     fun ensureBouncyCastleProvider() {
-        try {
-            Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
-            Security.insertProviderAt(BouncyCastleProvider(), 1)
-            Log.i(TAG, "Registered full BouncyCastle provider at position 1.")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to register BouncyCastle provider: ${e.message}")
+        if (isBcRegistered) return
+        synchronized(this) {
+            if (isBcRegistered) return
+            try {
+                val existing = Security.getProvider(BouncyCastleProvider.PROVIDER_NAME)
+                if (existing != null) {
+                    val providers = Security.getProviders()
+                    if (providers.isNotEmpty() && providers[0].name == BouncyCastleProvider.PROVIDER_NAME) {
+                        isBcRegistered = true
+                        return
+                    }
+                }
+                Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
+                Security.insertProviderAt(BouncyCastleProvider(), 1)
+                isBcRegistered = true
+                Log.i(TAG, "Registered full BouncyCastle provider at position 1.")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to register BouncyCastle provider: ${e.message}")
+            }
         }
     }
 
@@ -106,21 +122,14 @@ object CertificateManager {
                 val cf = CertificateFactory.getInstance("X.509")
                 val localCert = cf.generateCertificate(ByteArrayInputStream(pemBytes)) as? X509Certificate
                 if (localCert != null) {
-                    val localFingerprint = getFingerprint(localCert)
-                    Log.i(TAG, "Local CA fingerprint (SHA-256): $localFingerprint")
-
                     val keyStore = KeyStore.getInstance("AndroidCAStore")
                     keyStore.load(null, null)
-                    val aliases = keyStore.aliases()
-                    while (aliases.hasMoreElements()) {
-                        val alias = aliases.nextElement() as String
-                        val cert = keyStore.getCertificate(alias) as? X509Certificate ?: continue
-                        if (getFingerprint(cert) == localFingerprint) {
-                            Log.i(TAG, "Verified: Matching WhiteApp Root CA is installed in AndroidCAStore (alias=$alias).")
-                            return true
-                        }
+                    val alias = keyStore.getCertificateAlias(localCert)
+                    if (alias != null) {
+                        Log.i(TAG, "Verified: Matching WhiteApp Root CA is installed in AndroidCAStore (alias=$alias).")
+                        return true
                     }
-                    Log.w(TAG, "No matching certificate found in AndroidCAStore for our local fingerprint.")
+                    Log.w(TAG, "No matching certificate found in AndroidCAStore for our local certificate.")
                     return false
                 }
             }

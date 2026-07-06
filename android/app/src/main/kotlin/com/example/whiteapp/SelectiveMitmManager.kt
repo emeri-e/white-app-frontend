@@ -12,115 +12,87 @@ import javax.net.ssl.SSLSession
 class SelectiveMitmManager(authority: Authority) : MitmManager {
     private val delegate = CertificateSniffingMitmManager(authority)
 
-    // Static seed list: well-known certificate-pinned domains.
-    // These bypass MITM from the very first connection (no initial failure needed).
-    private val staticBypassDomains = setOf(
-        "instagram.com",
-        "fbcdn.net",
-        "facebook.com",
-        "messenger.com",
-        "snapchat.com",
-        "whatsapp.com",
-        "whatsapp.net",
-        "tiktok.com",
-        "tiktokcdn.com",
-        "twitter.com",
-        "x.com",
-        "twimg.com",
-        "t.co",
-        // Google Services & Pinned App bypasses
-        "youtube.com",
-        "googlevideo.com",
-        "ytimg.com",
-        "ggpht.com",
-        "googleapis.com",
-        "gvt1.com",
-        "android.com",
-        "gmail.com"
-    )
-
-    private fun shouldBypass(host: String?): Boolean {
-        if (host == null) return false
-        val cleanHost = host.lowercase().trim()
-
-        // 1. Check static seed list
-        if (staticBypassDomains.any { cleanHost == it || cleanHost.endsWith(".$it") }) {
-            return true
-        }
-
-        // 2. Check dynamic learned bypass set (hosts that failed MITM at runtime)
-        if (dynamicBypassHosts.contains(cleanHost)) {
-            return true
-        }
-        // Also check parent domain in dynamic set (e.g. "api.example.com" matches "example.com")
-        val parts = cleanHost.split(".")
-        if (parts.size > 2) {
-            for (i in 1 until parts.size - 1) {
-                val parentDomain = parts.subList(i, parts.size).joinToString(".")
-                if (dynamicBypassHosts.contains(parentDomain)) {
-                    return true
-                }
-            }
-        }
-
-        return false
+    override fun serverSslEngine(peerHost: String, peerPort: Int): SSLEngine {
+        return delegate.serverSslEngine(peerHost, peerPort)
     }
 
-    override fun serverSslEngine(peerHost: String, peerPort: Int): SSLEngine? {
-        if (shouldBypass(peerHost)) {
-            Log.i(TAG, "Bypassing MITM for upstream: $peerHost (cert-pinned/learned)")
-            return null
-        }
-        return try {
-            val engine = delegate.serverSslEngine(peerHost, peerPort)
-            Log.d(TAG, "Created upstream SSLEngine for $peerHost:$peerPort")
-            engine
-        } catch (e: Exception) {
-            Log.e(TAG, "FAILED to create upstream SSLEngine for $peerHost:$peerPort: ${e.message}", e)
-            throw e
-        }
+    override fun serverSslEngine(): SSLEngine {
+        return delegate.serverSslEngine()
     }
 
-    override fun serverSslEngine(): SSLEngine? {
-        return try {
-            delegate.serverSslEngine()
-        } catch (e: Exception) {
-            Log.e(TAG, "FAILED to create default upstream SSLEngine: ${e.message}", e)
-            throw e
-        }
-    }
-
-    override fun clientSslEngineFor(httpRequest: HttpRequest, serverSslSession: SSLSession): SSLEngine? {
-        val hostHeader = httpRequest.headers().get("Host")
-        val host = hostHeader?.split(":")?.firstOrNull()
-
-        if (shouldBypass(host)) {
-            Log.i(TAG, "Bypassing MITM for client: $host (cert-pinned/learned)")
-            return null
-        }
-        return try {
-            val engine = delegate.clientSslEngineFor(httpRequest, serverSslSession)
-            Log.d(TAG, "Created client SSLEngine for $host (forged cert presented)")
-            engine
-        } catch (e: Exception) {
-            Log.e(TAG, "FAILED to create client SSLEngine for $host: ${e.message}", e)
-            throw e
-        }
+    override fun clientSslEngineFor(httpRequest: HttpRequest, serverSslSession: SSLSession): SSLEngine {
+        return delegate.clientSslEngineFor(httpRequest, serverSslSession)
     }
 
     companion object {
         private const val TAG = "SelectiveMitmManager"
 
-        /**
-         * Dynamic bypass set: hosts that have been learned at runtime to reject MITM.
-         * Thread-safe. Populated by [recordFailure] when connection failures are detected.
-         * Persists for the lifetime of the VPN session.
-         *
-         * Modeled after mitmproxy's tls_passthrough.py "Conservative Strategy":
-         * once a host fails even once, bypass it for all future connections.
-         */
+        // Static seed list: well-known certificate-pinned domains.
+        // These bypass MITM from the very first connection (no initial failure needed).
+        private val staticBypassDomains = setOf(
+            "instagram.com",
+            "fbcdn.net",
+            "facebook.com",
+            "messenger.com",
+            "snapchat.com",
+            "whatsapp.com",
+            "whatsapp.net",
+            "tiktok.com",
+            "tiktokcdn.com",
+            "twitter.com",
+            "x.com",
+            "twimg.com",
+            "t.co",
+            // Google Services & Pinned App bypasses
+            "youtube.com",
+            "googlevideo.com",
+            "ytimg.com",
+            "ggpht.com",
+            "googleapis.com",
+            "gvt1.com",
+            "android.com",
+            "gmail.com"
+        )
+
+        // Dynamic bypass set: hosts that have been learned at runtime to reject MITM.
         private val dynamicBypassHosts: MutableSet<String> =
             ConcurrentHashMap.newKeySet()
+
+        /**
+         * Checks if a host should bypass MITM proxy decryption (using static list or dynamic learned list).
+         */
+        fun shouldBypass(host: String?): Boolean {
+            if (host == null) return false
+            val cleanHost = host.lowercase().trim()
+
+            // 0. Automatically bypass raw IP addresses (IPv4 and IPv6)
+            // They are used by background system APIs/pinned apps and never contain browser-filterable pages.
+            if (cleanHost.all { it.isDigit() || it == '.' || it == ':' || it == '[' || it == ']' }) {
+                return true
+            }
+
+            // 1. Check static seed list
+            if (staticBypassDomains.any { cleanHost == it || cleanHost.endsWith(".$it") }) {
+                return true
+            }
+
+            // 2. Check dynamic learned bypass set (hosts that failed MITM at runtime)
+            if (dynamicBypassHosts.contains(cleanHost)) {
+                return true
+            }
+            // Also check parent domain in dynamic set (e.g. "api.example.com" matches "example.com")
+            val parts = cleanHost.split(".")
+            if (parts.size > 2) {
+                for (i in 1 until parts.size - 1) {
+                    val parentDomain = parts.subList(i, parts.size).joinToString(".")
+                    if (dynamicBypassHosts.contains(parentDomain)) {
+                        return true
+                    }
+                }
+            }
+
+            return false
+        }
 
         /**
          * Record that a host has failed MITM (e.g. SSL handshake rejected by client due to cert pinning).
@@ -129,8 +101,38 @@ class SelectiveMitmManager(authority: Authority) : MitmManager {
         fun recordFailure(host: String?) {
             if (host.isNullOrBlank()) return
             val cleanHost = host.lowercase().trim()
+            
+            // Do not record raw IP addresses
+            if (cleanHost.all { it.isDigit() || it == '.' || it == ':' || it == '[' || it == ']' }) return
+
             if (dynamicBypassHosts.add(cleanHost)) {
                 Log.w(TAG, "🔓 LEARNED BYPASS: $cleanHost (cert-pinned app detected, future connections will passthrough)")
+            }
+
+            val registrable = getRegistrableDomain(cleanHost)
+            if (registrable != cleanHost && registrable.isNotEmpty()) {
+                if (dynamicBypassHosts.add(registrable)) {
+                    Log.w(TAG, "🔓 LEARNED REGISTERED DOMAIN BYPASS: $registrable (derived from $cleanHost)")
+                }
+            }
+        }
+
+        /**
+         * Extract the registrable domain of a host name (e.g. "api.example.com" -> "example.com").
+         */
+        private fun getRegistrableDomain(host: String): String {
+            val parts = host.split(".")
+            if (parts.size <= 2) return host
+
+            // Check for common double TLDs (e.g., co.uk, com.br, net.ru, co.jp)
+            val secondToLast = parts[parts.size - 2]
+            val last = parts.last()
+            val isDoubleTld = (last.length == 2 && (secondToLast == "com" || secondToLast == "co" || secondToLast == "net" || secondToLast == "org" || secondToLast == "edu" || secondToLast == "gov"))
+
+            return if (isDoubleTld && parts.size >= 3) {
+                parts.subList(parts.size - 3, parts.size).joinToString(".")
+            } else {
+                parts.subList(parts.size - 2, parts.size).joinToString(".")
             }
         }
 
@@ -139,7 +141,7 @@ class SelectiveMitmManager(authority: Authority) : MitmManager {
          * Useful for debugging/logging.
          */
         fun isHostBypassed(host: String): Boolean {
-            return dynamicBypassHosts.contains(host.lowercase().trim())
+            return shouldBypass(host)
         }
 
         /**

@@ -7,16 +7,35 @@ import android.util.Base64
 import android.util.Log
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
+import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.handler.codec.http.*
+import io.netty.handler.ssl.SslHandshakeCompletionEvent
 import org.littleshoot.proxy.HttpFiltersAdapter
 import org.littleshoot.proxy.HttpFiltersSourceAdapter
 import java.nio.charset.StandardCharsets
+import javax.net.ssl.SSLHandshakeException
 
 class ImageScanFilter(
     private val context: Context,
     originalRequest: HttpRequest,
     ctx: ChannelHandlerContext
 ) : HttpFiltersAdapter(originalRequest, ctx) {
+
+    init {
+        // For CONNECT requests, add HandshakeFailureDetector to the client pipeline
+        // to detect if the client app/WebView rejects our custom Root CA certificate.
+        if (originalRequest?.method() == HttpMethod.CONNECT) {
+            val uriStr = originalRequest.uri ?: ""
+            val host = uriStr.split(":").firstOrNull()?.lowercase() ?: ""
+            if (host.isNotEmpty()) {
+                val pipeline = ctx.pipeline()
+                if (pipeline.get("HandshakeFailureDetector") == null) {
+                    pipeline.addFirst("HandshakeFailureDetector", HandshakeFailureDetector(host))
+                    Log.d(TAG, "Registered HandshakeFailureDetector for $host in client channel pipeline")
+                }
+            }
+        }
+    }
 
     companion object {
         private const val TAG = "ImageScanFilter"
@@ -400,5 +419,60 @@ class ImageScanFilter(
         response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0)
         response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
         return response
+    }
+}
+
+class HandshakeFailureDetector(private val host: String) : ChannelInboundHandlerAdapter() {
+    private var handshakeSucceeded = false
+    private var requestReceived = false
+
+    override fun userEventTriggered(ctx: ChannelHandlerContext, evt: Any) {
+        if (evt is SslHandshakeCompletionEvent) {
+            if (evt.isSuccess) {
+                handshakeSucceeded = true
+                Log.d("HandshakeDetector", "SSL Handshake succeeded for: $host")
+            } else {
+                val cause = evt.cause()
+                Log.w("HandshakeDetector", "SSL Handshake FAILED for $host: ${cause?.message}")
+                
+                val msg = cause?.message ?: ""
+                if (msg.contains("certificate_unknown") || 
+                    msg.contains("bad_certificate") || 
+                    msg.contains("certificate_expired") ||
+                    msg.contains("handshake_failure") ||
+                    msg.contains("SSLHandshakeException") ||
+                    cause is javax.net.ssl.SSLHandshakeException) {
+                    
+                    Log.w("HandshakeDetector", "🔓 Client rejected proxy certificate for $host. Recording failure to bypass MITM next time.")
+                    SelectiveMitmManager.recordFailure(host)
+                }
+            }
+        }
+        super.userEventTriggered(ctx, evt)
+    }
+
+    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+        // If we receive a decrypted HTTP request (other than the initial CONNECT request,
+        // which was already processed and did not pass through this handler), the handshake succeeded.
+        if (msg is HttpRequest && msg.method() != HttpMethod.CONNECT) {
+            requestReceived = true
+        }
+        super.channelRead(ctx, msg)
+    }
+
+    override fun channelInactive(ctx: ChannelHandlerContext) {
+        // If the channel is closed and no decrypted request was received,
+        // it indicates the client dropped the connection (e.g. rejected the custom CA).
+        if (!handshakeSucceeded && !requestReceived) {
+            Log.w("HandshakeDetector", "🔓 Connection for $host closed before handshake completed or any request was decrypted. Recording bypass.")
+            SelectiveMitmManager.recordFailure(host)
+        }
+        super.channelInactive(ctx)
+    }
+
+    override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
+        Log.w("HandshakeDetector", "🔓 Exception on connection to $host: ${cause.message}. Recording bypass.")
+        SelectiveMitmManager.recordFailure(host)
+        super.exceptionCaught(ctx, cause)
     }
 }
