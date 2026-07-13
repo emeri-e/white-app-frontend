@@ -14,11 +14,14 @@ object ContentFilterProxy {
     private var routingProxyServer: ConnectProxyServer? = null
     private val lock = Any()
 
+    @Volatile var appContext: Context? = null
+
     /**
      * Starts the local LittleProxy MITM server and the Netty routing proxy.
      */
     fun start(context: Context) {
         synchronized(lock) {
+            appContext = context.applicationContext
             if (proxyServer != null || routingProxyServer != null) {
                 Log.w(TAG, "Proxy server is already running.")
                 return

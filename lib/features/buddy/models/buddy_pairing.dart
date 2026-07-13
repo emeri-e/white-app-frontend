@@ -102,6 +102,8 @@ class BuddyDashboardData {
   final int longestStreak;
   final List<BuddyAlert> recentAlerts;
   final List<dynamic> weeklyReports;
+  final bool emergencyLockActive;
+  final Map<String, dynamic> deviceStatus;
 
   BuddyDashboardData({
     required this.pairing,
@@ -109,17 +111,29 @@ class BuddyDashboardData {
     required this.longestStreak,
     required this.recentAlerts,
     required this.weeklyReports,
+    required this.emergencyLockActive,
+    required this.deviceStatus,
   });
 
   factory BuddyDashboardData.fromJson(Map<String, dynamic> json) {
     return BuddyDashboardData(
-      pairing: BuddyPairing.fromJson(json['pairing']),
+      pairing: BuddyPairing(
+        id: json['pairing_id'] ?? 0,
+        userEmail: json['user_email'] ?? '',
+        status: 'active',
+        inviteCode: '',
+        inviteLink: '',
+        pairedAt: json['paired_at'] != null ? DateTime.tryParse(json['paired_at']) : null,
+        inviteExpiresAt: DateTime.now(),
+      ),
       currentStreak: json['current_streak'] ?? 0,
       longestStreak: json['longest_streak'] ?? 0,
-      recentAlerts: (json['recent_alerts'] as List? ?? [])
+      recentAlerts: (json['alerts'] as List? ?? [])
           .map((item) => BuddyAlert.fromJson(item))
           .toList(),
-      weeklyReports: json['weekly_reports'] ?? [],
+      weeklyReports: json['reports'] ?? [],
+      emergencyLockActive: json['emergency_lock_active'] ?? false,
+      deviceStatus: json['device_status'] != null ? Map<String, dynamic>.from(json['device_status']) : {},
     );
   }
 }

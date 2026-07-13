@@ -45,96 +45,165 @@ class _BuddyDashboardScreenState extends State<BuddyDashboardScreen> {
   }
 
   Future<void> _handleEmergencyLock() async {
-    final confirm = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(28),
-          decoration: const BoxDecoration(
-            color: Color(0xFF1E1B4B), // Premium Indigo-dark
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(32),
-              topRight: Radius.circular(32),
+    final active = _dashboardData?.emergencyLockActive ?? false;
+
+    if (active) {
+      final pinController = TextEditingController();
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1E293B),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: const Row(
+              children: [
+                Icon(Icons.lock_open_rounded, color: Colors.greenAccent),
+                SizedBox(width: 10),
+                Text('Deactivate Lock', style: TextStyle(fontSize: 18, color: Colors.white)),
+              ],
             ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 50,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
+            content: TextField(
+              controller: pinController,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Enter Buddy Security PIN',
+                labelStyle: TextStyle(color: Colors.white60),
               ),
-              const SizedBox(height: 24),
-              const Row(
-                children: [
-                  Icon(Icons.gpp_bad_rounded, color: Colors.redAccent, size: 28),
-                  SizedBox(width: 12),
-                  Text(
-                    'Trigger Emergency Lock?',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'This will immediately elevate all content shields on your partner\'s device to MAXIMUM security. Your partner will be locked out of configurations instantly and receive a security notification.',
-                style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.7), height: 1.5),
-              ),
-              const SizedBox(height: 28),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text(
-                  'CONFIRM LOCKDOWN 🚨',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-              ),
-              const SizedBox(height: 12),
+              style: const TextStyle(color: Colors.white),
+            ),
+            actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+                child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.greenAccent),
+                onPressed: () {
+                  if (pinController.text.trim().isNotEmpty) {
+                    Navigator.pop(context, true);
+                  }
+                },
+                child: const Text('Unlock', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
               ),
             ],
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
 
-    if (confirm == true) {
-      setState(() => _isLoading = true);
-      try {
-        await BuddyService.triggerEmergencyLock();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Emergency lockdown activated successfully! 🚨'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        _loadDashboard();
-      } catch (e) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lockdown failed: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+      if (confirm == true) {
+        setState(() => _isLoading = true);
+        try {
+          await BuddyService.unlockEmergency(pinController.text.trim());
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Emergency lockdown deactivated successfully! ✓'),
+              backgroundColor: Colors.greenAccent,
+            ),
+          );
+          _loadDashboard();
+        } catch (e) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Unlock failed: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    } else {
+      final confirm = await showModalBottomSheet<bool>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (context) {
+          return Container(
+            padding: const EdgeInsets.all(28),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1E1B4B), // Premium Indigo-dark
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(32),
+                topRight: Radius.circular(32),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 50,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Row(
+                  children: [
+                    Icon(Icons.gpp_bad_rounded, color: Colors.redAccent, size: 28),
+                    SizedBox(width: 12),
+                    Text(
+                      'Trigger Emergency Lock?',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'This will immediately elevate all content shields on your partner\'s device to MAXIMUM security. Your partner will be locked out of configurations instantly and receive a security notification.',
+                  style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.7), height: 1.5),
+                ),
+                const SizedBox(height: 28),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text(
+                    'CONFIRM LOCKDOWN 🚨',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (confirm == true) {
+        setState(() => _isLoading = true);
+        try {
+          await BuddyService.triggerEmergencyLock();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Emergency lockdown activated successfully! 🚨'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          _loadDashboard();
+        } catch (e) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Lockdown failed: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
       }
     }
   }
@@ -382,10 +451,12 @@ class _BuddyDashboardScreenState extends State<BuddyDashboardScreen> {
 
                   // Diagnostics Device Status Telemetry
                   ProtectionStatusCard(
-                    vpnActive: true, // Mock states or determined from recent sync/model
-                    accessibilityActive: true,
-                    cameraRollActive: true,
-                    lastHeartbeat: DateTime.now().subtract(const Duration(minutes: 4)),
+                    vpnActive: data.deviceStatus['vpn_enabled'] ?? false,
+                    accessibilityActive: data.deviceStatus['accessibility_enabled'] ?? false,
+                    cameraRollActive: data.deviceStatus['camera_roll_monitoring'] ?? false,
+                    lastHeartbeat: data.deviceStatus['last_heartbeat'] != null
+                        ? DateTime.tryParse(data.deviceStatus['last_heartbeat'])
+                        : null,
                   ),
                   const SizedBox(height: 24),
 
@@ -394,23 +465,27 @@ class _BuddyDashboardScreenState extends State<BuddyDashboardScreen> {
                     children: [
                       Expanded(
                         child: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.redAccent.withOpacity(0.1),
-                          side: const BorderSide(color: Colors.redAccent),
+                          backgroundColor: (data.emergencyLockActive ? Colors.greenAccent : Colors.redAccent).withOpacity(0.1),
+                          side: BorderSide(color: data.emergencyLockActive ? Colors.greenAccent : Colors.redAccent),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         ).button(
                           onPressed: _handleEmergencyLock,
-                          child: const Row(
+                          child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.gpp_bad_rounded, color: Colors.redAccent, size: 20),
-                              SizedBox(width: 8),
+                              Icon(
+                                data.emergencyLockActive ? Icons.lock_open_rounded : Icons.gpp_bad_rounded,
+                                color: data.emergencyLockActive ? Colors.greenAccent : Colors.redAccent,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
                               Text(
-                                'EMERGENCY LOCK',
+                                data.emergencyLockActive ? 'UNLOCK OVERRIDE' : 'EMERGENCY LOCK',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.redAccent,
+                                  color: data.emergencyLockActive ? Colors.greenAccent : Colors.redAccent,
                                 ),
                               ),
                             ],
@@ -464,16 +539,39 @@ class _BuddyDashboardScreenState extends State<BuddyDashboardScreen> {
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 100,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        _buildWeeklyReportCard('CURRENT WEEK', '12 Blocks matched', Colors.indigoAccent),
-                        const SizedBox(width: 12),
-                        _buildWeeklyReportCard('PAST WEEK (MAY 14)', '0 Alerts logged ✓', Colors.greenAccent),
-                        const SizedBox(width: 12),
-                        _buildWeeklyReportCard('PAST WEEK (MAY 07)', '3 Blocks matches', Colors.indigoAccent),
-                      ],
-                    ),
+                    child: data.weeklyReports.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No weekly summaries yet',
+                              style: TextStyle(color: Colors.white38, fontSize: 13),
+                            ),
+                          )
+                        : ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: data.weeklyReports.length,
+                            itemBuilder: (context, idx) {
+                              final r = data.weeklyReports[idx];
+                              String dateRange = '';
+                              if (r['week_start'] != null && r['week_end'] != null) {
+                                try {
+                                  final start = DateTime.parse(r['week_start']);
+                                  final end = DateTime.parse(r['week_end']);
+                                  dateRange = '${start.month}/${start.day} - ${end.month}/${end.day}';
+                                } catch (_) {}
+                              }
+                              final title = idx == 0 ? 'CURRENT WEEK' : 'PAST WEEK ($dateRange)';
+                              final totalBlocks = r['total_blocks'] ?? 0;
+                              final summary = totalBlocks == 0
+                                  ? '0 Alerts logged ✓'
+                                  : '$totalBlocks Blocks matched';
+                              final accentColor = totalBlocks == 0 ? Colors.greenAccent : Colors.indigoAccent;
+
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 12.0),
+                                child: _buildWeeklyReportCard(title, summary, accentColor),
+                              );
+                            },
+                          ),
                   ),
                   const SizedBox(height: 24),
 

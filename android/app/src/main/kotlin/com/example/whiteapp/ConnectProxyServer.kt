@@ -69,7 +69,7 @@ class ConnectProxyHandler(private val mitmPort: Int) : SimpleChannelInboundHandl
             val host = hostAndPort.first
             val port = hostAndPort.second
 
-            val shouldBypass = SelectiveMitmManager.shouldBypass(host)
+            val shouldBypass = SelectiveMitmManager.shouldBypass(host, ctx)
 
             if (shouldBypass) {
                 Log.i("ConnectProxyHandler", "Passthrough (raw TCP tunnel) enabled for: $host:$port")
@@ -242,7 +242,7 @@ class RelayHandler(
 
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
         Log.d("RelayHandler", "channelRead for host=$host (isMitmSide=$isMitmSide): msgType=${msg::class.java.name}")
-        if (msg is io.netty.buffer.ByteBuf && parser != null) {
+        if (msg is io.netty.buffer.ByteBuf && parser != null && !isMitmSide) {
             parser.processBytes(msg)
         }
 
@@ -268,10 +268,10 @@ class RelayHandler(
         }
 
         if (host != null && parser != null && !isMitmSide && port == 443) {
-            Log.d("RelayHandler", "Checking TLS handshake result for $host. sawApplicationData=${parser.sawApplicationData}")
-            if (!parser.sawApplicationData) {
-                Log.w("ConnectProxyHandler", "🔓 HTTPS connection to $host:$port closed without transmitting TLS Application Data. Learning bypass.")
-                SelectiveMitmManager.recordFailure(host)
+            Log.d("RelayHandler", "Checking TLS handshake result for $host. sawHandshakeStart=${parser.sawHandshakeStart} sawHandshakeSuccess=${parser.sawHandshakeSuccess} sawApplicationData=${parser.sawApplicationData}")
+            if (parser.sawHandshakeStart && !parser.sawHandshakeSuccess && !parser.sawApplicationData) {
+                Log.w("ConnectProxyHandler", "🔓 HTTPS connection to $host:$port failed handshake (ClientHello sent but no success or app data). Learning bypass.")
+                SelectiveMitmManager.recordFailure(host, ctx)
             }
         }
         super.channelInactive(ctx)
@@ -290,7 +290,11 @@ class TlsRecordParser {
     private var lengthBytesRead = 0
     private var lengthValue = 0
     
+    @Volatile var sawHandshakeStart = false
+        private set
     @Volatile var sawApplicationData = false
+        private set
+    @Volatile var sawHandshakeSuccess = false
         private set
 
     fun processBytes(buf: io.netty.buffer.ByteBuf) {
@@ -321,8 +325,14 @@ class TlsRecordParser {
                             state = 0 // Malformed/non-TLS, reset
                         } else {
                             Log.d("TlsRecordParser", "Parsed TLS Record: Type=$recordType, Length=$payloadBytesRemaining")
+                            if (recordType == 0x16) { // Handshake (ClientHello is 0x16)
+                                sawHandshakeStart = true
+                            }
                             if (recordType == 0x17) {
                                 sawApplicationData = true
+                            }
+                            if (recordType == 0x14) { // ChangeCipherSpec
+                                sawHandshakeSuccess = true
                             }
                             if (payloadBytesRemaining > 0) {
                                 state = 4

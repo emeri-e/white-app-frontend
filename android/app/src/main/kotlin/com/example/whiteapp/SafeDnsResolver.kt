@@ -194,7 +194,8 @@ object SafeDnsResolver {
     /**
      * Checks if the given text contains any blocked keyword.
      * Splitting search queries into words prevents false positives (e.g., blocking "speed" because of "pee",
-     * or "class" because of "ass") while still blocking exact matches and multi-word phrases.
+     * or "class" because of "ass") while still blocking exact matches, multi-word phrases, and substring matches
+     * for highly specific explicit keywords.
      */
     fun isKeywordBlocked(text: String): Boolean {
         if (blockedKeywords.isEmpty()) return false
@@ -203,18 +204,31 @@ object SafeDnsResolver {
         // Split text into alphanumeric words
         val words = lowerText.split(Regex("[^a-zA-Z0-9]+")).filter { it.isNotEmpty() }
         
+        // Keywords that require exact word matching to prevent false positives on innocent words
+        // e.g. "ass" (class, glass, assistant), "pee" (speed, sleep), "sex" (unisex, Essex)
+        val exactMatchKeywords = setOf("sex", "ass", "pee", "nude", "xxx", "erotic")
+
         for (kw in blockedKeywords) {
             val cleanKw = kw.lowercase().trim()
             if (cleanKw.isEmpty()) continue
             
-            // Check multi-word phrase or single word
-            if (cleanKw.contains(" ")) {
-                if (lowerText.contains(cleanKw)) {
+            if (cleanKw in exactMatchKeywords) {
+                // Exact word match required
+                if (words.contains(cleanKw)) {
                     return true
                 }
             } else {
-                if (words.contains(cleanKw)) {
-                    return true
+                // Substring or phrase match allowed
+                if (cleanKw.contains(" ")) {
+                    if (lowerText.contains(cleanKw)) {
+                        return true
+                    }
+                } else {
+                    // Check if any word in the query contains the keyword
+                    // e.g. "porn" matches "pornography", "pornos", "pornhub.com"
+                    if (words.any { it.contains(cleanKw) }) {
+                        return true
+                    }
                 }
             }
         }

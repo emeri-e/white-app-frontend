@@ -425,6 +425,7 @@ class ImageScanFilter(
 class HandshakeFailureDetector(private val host: String) : ChannelInboundHandlerAdapter() {
     private var handshakeSucceeded = false
     private var requestReceived = false
+    private var bytesReceived = false
 
     override fun userEventTriggered(ctx: ChannelHandlerContext, evt: Any) {
         if (evt is SslHandshakeCompletionEvent) {
@@ -444,7 +445,7 @@ class HandshakeFailureDetector(private val host: String) : ChannelInboundHandler
                     cause is javax.net.ssl.SSLHandshakeException) {
                     
                     Log.w("HandshakeDetector", "🔓 Client rejected proxy certificate for $host. Recording failure to bypass MITM next time.")
-                    SelectiveMitmManager.recordFailure(host)
+                    SelectiveMitmManager.recordFailure(host, ctx)
                 }
             }
         }
@@ -452,6 +453,9 @@ class HandshakeFailureDetector(private val host: String) : ChannelInboundHandler
     }
 
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+        if (msg is io.netty.buffer.ByteBuf && msg.readableBytes() > 0) {
+            bytesReceived = true
+        }
         // If we receive a decrypted HTTP request (other than the initial CONNECT request,
         // which was already processed and did not pass through this handler), the handshake succeeded.
         if (msg is HttpRequest && msg.method() != HttpMethod.CONNECT) {
@@ -463,16 +467,15 @@ class HandshakeFailureDetector(private val host: String) : ChannelInboundHandler
     override fun channelInactive(ctx: ChannelHandlerContext) {
         // If the channel is closed and no decrypted request was received,
         // it indicates the client dropped the connection (e.g. rejected the custom CA).
-        if (!handshakeSucceeded && !requestReceived) {
+        if (!handshakeSucceeded && !requestReceived && bytesReceived) {
             Log.w("HandshakeDetector", "🔓 Connection for $host closed before handshake completed or any request was decrypted. Recording bypass.")
-            SelectiveMitmManager.recordFailure(host)
+            SelectiveMitmManager.recordFailure(host, ctx)
         }
         super.channelInactive(ctx)
     }
 
     override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
-        Log.w("HandshakeDetector", "🔓 Exception on connection to $host: ${cause.message}. Recording bypass.")
-        SelectiveMitmManager.recordFailure(host)
+        Log.w("HandshakeDetector", "🔓 Exception on connection to $host: ${cause.message}. HandshakeFailureDetector letting channelInactive handle bypass check.")
         super.exceptionCaught(ctx, cause)
     }
 }
