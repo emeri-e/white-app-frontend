@@ -79,6 +79,47 @@ class SelectiveMitmManager(authority: Authority) : MitmManager {
         // Dynamic bypass set: hosts that have been learned globally when package is unknown.
         private val dynamicBypassHosts: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
+        // Dynamically learned fully bypassed apps (e.g. messaging/VoIP apps that use cert-pinning or custom TCP protocols)
+        private val bypassedApps = ConcurrentHashMap.newKeySet<String>()
+
+        fun loadBypassedApps(context: Context) {
+            try {
+                val prefs = context.getSharedPreferences("SelectiveMitmPrefs", Context.MODE_PRIVATE)
+                val apps = prefs.getStringSet("bypassed_apps", emptySet())
+                if (apps != null) {
+                    bypassedApps.addAll(apps)
+                    Log.i(TAG, "Loaded ${bypassedApps.size} bypassed apps: $bypassedApps")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading bypassed apps: ${e.message}")
+            }
+        }
+
+        private fun saveBypassedApps(context: Context) {
+            try {
+                val prefs = context.getSharedPreferences("SelectiveMitmPrefs", Context.MODE_PRIVATE)
+                prefs.edit().putStringSet("bypassed_apps", bypassedApps).apply()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving bypassed apps: ${e.message}")
+            }
+        }
+
+        private fun isBrowserApp(context: Context, packageName: String): Boolean {
+            try {
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://google.com"))
+                val pm = context.packageManager
+                val resolveInfos = pm.queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                for (info in resolveInfos) {
+                    if (info.activityInfo.packageName == packageName) {
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking if browser: ${e.message}")
+            }
+            return false
+        }
+
         private fun normalizeAddr(addr: InetSocketAddress): InetSocketAddress {
             val ip = addr.address ?: return addr
             if (ip is java.net.Inet6Address) {
@@ -158,8 +199,14 @@ class SelectiveMitmManager(authority: Authority) : MitmManager {
             // 1. Identify calling app package name(s)
             val packages = getCallingAppPackages(ctx)
             if (packages.isNotEmpty()) {
-                // Check if any of the packages has a learned bypass for this host
+                // If any of the packages is in the dynamically bypassed apps list, bypass it!
                 for (pkg in packages) {
+                    if (bypassedApps.contains(pkg)) {
+                        Log.i(TAG, "✈️ BYPASS (APP-LEARNED-ALL): $cleanHost (App $pkg is fully bypassed due to prior handshake failures)")
+                        return true
+                    }
+
+                    // Check if any of the packages has a learned bypass for this host
                     val bypassedHosts = appBypassMap[pkg]
                     if (bypassedHosts != null) {
                         if (bypassedHosts.contains(cleanHost) || bypassedHosts.any { cleanHost.endsWith(".$it") }) {
@@ -267,13 +314,24 @@ class SelectiveMitmManager(authority: Authority) : MitmManager {
                 return
             }
 
+            val context = ContentFilterProxy.appContext
             if (ctx != null) {
                 val packages = getCallingAppPackages(ctx)
                 if (packages.isNotEmpty()) {
                     for (pkg in packages) {
-                        val bypassedHosts = appBypassMap.getOrPut(pkg) { ConcurrentHashMap.newKeySet() }
-                        if (bypassedHosts.add(cleanHost)) {
-                            Log.w(TAG, "🔓 LEARNED BYPASS (APP-ISOLATED): $cleanHost for app $pkg")
+                        // Check if this app is a browser.
+                        // If it is NOT a browser, we bypass the ENTIRE APP dynamically!
+                        if (context != null && !isBrowserApp(context, pkg)) {
+                            if (bypassedApps.add(pkg)) {
+                                Log.w(TAG, "🔓 LEARNED FULL BYPASS FOR APP: $pkg (non-browser app failed handshake on $cleanHost)")
+                                saveBypassedApps(context)
+                            }
+                        } else {
+                            // If it is a browser, we only bypass the specific host for this app
+                            val bypassedHosts = appBypassMap.getOrPut(pkg) { ConcurrentHashMap.newKeySet() }
+                            if (bypassedHosts.add(cleanHost)) {
+                                Log.w(TAG, "🔓 LEARNED BYPASS (APP-ISOLATED): $cleanHost for app $pkg")
+                            }
                         }
                     }
                     return

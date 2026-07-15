@@ -35,6 +35,9 @@ object ContentFilterProxy {
                 // Clear any dynamically learned MITM bypasses from previous sessions
                 SelectiveMitmManager.clearDynamicBypasses()
 
+                // Load dynamically bypassed apps from SharedPreferences
+                SelectiveMitmManager.loadBypassedApps(context)
+
                 // Get or generate Root CA authority parameters
                 val authority = CertificateManager.getOrGenerateAuthority(context)
 

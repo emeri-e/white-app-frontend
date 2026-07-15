@@ -81,8 +81,18 @@ class WhiteVpnService : VpnService() {
             startVpn()
         } else if (action == "STOP") {
             stopVpn()
+        } else if (action == "RESTART") {
+            restartVpn()
         }
         return START_STICKY
+    }
+
+    private fun restartVpn() {
+        Log.i(TAG, "Restarting VPN service to reload disallowed application list...")
+        stopVpn()
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            startVpn()
+        }, 300)
     }
 
     override fun onDestroy() {
@@ -179,12 +189,24 @@ class WhiteVpnService : VpnService() {
             .setMtu(1500)
             .addAddress("10.0.0.2", 32)
 
-        // Prevent routing loops by excluding our own app from the VPN tunnel
-        try {
-            builder.addDisallowedApplication(packageName)
-            Log.i(TAG, "Excluded $packageName from VPN tunnel routing loops.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to exclude our own app package: ${e.message}")
+        // Prevent routing loops by excluding our own app from the VPN tunnel.
+        // Also exclude dynamically learned non-browser apps that require direct network bypass (e.g. WhatsApp VoIP calls).
+        val prefs = getSharedPreferences("SelectiveMitmPrefs", Context.MODE_PRIVATE)
+        val dynamicBypassedApps = prefs.getStringSet("bypassed_apps", emptySet()) ?: emptySet()
+        
+        val excludedApps = mutableListOf(packageName)
+        excludedApps.addAll(dynamicBypassedApps)
+        
+        Log.i(TAG, "Excluding packages from VPN tunnel: $excludedApps")
+        for (app in excludedApps) {
+            try {
+                builder.addDisallowedApplication(app)
+                Log.i(TAG, "Excluded $app from VPN tunnel.")
+            } catch (e: PackageManager.NameNotFoundException) {
+                Log.w(TAG, "Package $app not installed, skipping exclusion.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to exclude package $app: ${e.message}")
+            }
         }
 
         // Configure system-wide HTTP Proxy routing to intercept HTTP/HTTPS traffic (Option C)
