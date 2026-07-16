@@ -25,6 +25,8 @@ import 'package:whiteapp/features/tools/screens/soundscape_screen.dart';
 import 'package:whiteapp/features/emergency/screens/sos_post_screen.dart';
 import 'package:whiteapp/features/emergency/screens/specialist_directory_screen.dart';
 import 'package:whiteapp/features/emergency/screens/supervisor_chat_screen.dart';
+import 'package:whiteapp/features/recovery/screens/hero_onboarding_screen.dart';
+import 'package:whiteapp/features/recovery/screens/white_heroes_hub_screen.dart';
 
 import 'package:provider/provider.dart';
 import 'package:whiteapp/features/community/controllers/community_controller.dart';
@@ -160,6 +162,8 @@ class MyApp extends StatelessWidget {
           final args = ModalRoute.of(context)!.settings.arguments as String?;
           return BuddyAcceptScreen(initialInviteCode: args);
         },
+        HeroOnboardingScreen.id: (context) => const HeroOnboardingScreen(),
+        WhiteHeroesHubScreen.id: (context) => const WhiteHeroesHubScreen(),
       },
     );
   }

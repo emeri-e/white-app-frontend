@@ -21,6 +21,9 @@ import 'package:whiteapp/core/services/api_service.dart';
 import 'package:whiteapp/core/constants/env.dart';
 import 'package:provider/provider.dart';
 import 'package:whiteapp/features/community/controllers/community_controller.dart';
+import 'package:whiteapp/features/recovery/services/hero_service.dart';
+import 'package:whiteapp/features/recovery/screens/hero_onboarding_screen.dart';
+import 'package:whiteapp/features/recovery/screens/white_heroes_hub_screen.dart';
 
 import 'package:whiteapp/features/community/screens/community_feed_screen.dart';
 import 'package:whiteapp/features/support_groups/screens/support_group_list_screen.dart';
@@ -254,6 +257,7 @@ class _HomeTabState extends State<HomeTab> {
   List<dynamic> _enrollments = RecoveryService.cachedEnrollments ?? [];
   Map<String, dynamic>? _dashboardData = RecoveryService.cachedDashboardData;
   Map<String, dynamic>? _dailyContent = RecoveryService.cachedDailyLearningSummary;
+  Map<String, dynamic>? _heroEligibility;
 
   // ... (existing methods)
 
@@ -307,6 +311,13 @@ class _HomeTabState extends State<HomeTab> {
       
       final prefs = await SharedPreferences.getInstance();
       final setupCompleted = prefs.getBool('filtering_setup_completed') ?? false;
+
+      Map<String, dynamic>? heroEligibility;
+      try {
+        heroEligibility = await HeroService.checkEligibility();
+      } catch (e) {
+        debugPrint("Error loading hero eligibility status in home: $e");
+      }
       
       if (mounted) {
         final communityController = Provider.of<CommunityController>(context, listen: false);
@@ -323,6 +334,7 @@ class _HomeTabState extends State<HomeTab> {
           _currentSession = currentSession;
           _buddyPairing = buddyPairing;
           _setupCompleted = setupCompleted;
+          _heroEligibility = heroEligibility;
           
           // Determine current group for pulse
           final statusType = _dashboardData?['current_status_type'];
@@ -775,6 +787,153 @@ class _HomeTabState extends State<HomeTab> {
     }
   }
 
+  Widget _buildHeroInvitationCard() {
+    final status = _heroEligibility?['status'];
+    if (status != 'invited' && status != 'onboarding') {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF6366F1), Color(0xFFEC4899)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFEC4899).withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () async {
+            final result = await Navigator.pushNamed(context, HeroOnboardingScreen.id);
+            if (result == true) {
+              _loadData();
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.stars_rounded, color: Colors.amberAccent, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Celebrate Your Recovery!',
+                        style: GoogleFonts.outfit(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'You are invited to become a White Hero. Share your story & claim your reward!',
+                        style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroesHubCard() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 24),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            Navigator.pushNamed(context, WhiteHeroesHubScreen.id);
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.workspace_premium_rounded, color: Colors.indigoAccent, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'White Heroes Hub',
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Read inspiring recovery stories & watch live broadcasts.',
+                        style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDashboardView() {
     final currentStatus = _dashboardData?['current_status'] ?? 'Loading...';
     final statusType = _dashboardData?['current_status_type'] ?? 'unknown';
@@ -903,6 +1062,8 @@ class _HomeTabState extends State<HomeTab> {
                 const VpnStatusCard(),
                 const SizedBox(height: 24),
                 _buildBuddyStatusCard(),
+                _buildHeroInvitationCard(),
+                _buildHeroesHubCard(),
 
                 // Tools Hub Access
                 Container(
