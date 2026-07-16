@@ -169,6 +169,52 @@ class WhiteVpnService : VpnService() {
         super.onRevoke()
     }
 
+    private fun getBrowsersAndBrowsableApps(context: Context): List<String> {
+        val packages = mutableSetOf<String>()
+        try {
+            val pm = context.packageManager
+            
+            // Query for apps that can handle generic https://google.com URL with browsable category.
+            // This retrieves all generic web browsers (Chrome, Firefox, Samsung Internet, Opera, etc.)
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://google.com")).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+            }
+            
+            val resolveInfos = pm.queryIntentActivities(
+                intent,
+                PackageManager.MATCH_DEFAULT_ONLY
+            )
+            
+            for (info in resolveInfos) {
+                val pkgName = info.activityInfo.packageName
+                // Skip our own app to avoid routing loops
+                if (pkgName == context.packageName) continue
+                
+                Log.i(TAG, "Dynamic allowed browser found: $pkgName")
+                packages.add(pkgName)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error querying browsable apps: ${e.message}")
+        }
+        
+        // Fallbacks in case query returns empty (e.g. permission issues or package visibility restrictions)
+        if (packages.isEmpty()) {
+            val fallbacks = listOf(
+                "com.android.chrome",
+                "org.mozilla.firefox",
+                "com.android.browser",
+                "com.sec.android.app.sbrowser",
+                "com.opera.browser",
+                "com.brave.browser",
+                "com.microsoft.emmx"
+            )
+            Log.w(TAG, "No browsers found dynamically, using fallback browser list: $fallbacks")
+            packages.addAll(fallbacks)
+        }
+        
+        return packages.toList()
+    }
+
     private fun runVpn() {
         Log.i(TAG, "=== CONFIGURING DNS SHIELD ===")
         Log.i(TAG, "Family DNS: Cloudflare Families (1.1.1.3, 1.0.0.3) + AdGuard Family (94.140.14.15)")
@@ -179,12 +225,20 @@ class WhiteVpnService : VpnService() {
             .setMtu(1500)
             .addAddress("10.0.0.2", 32)
 
-        // Prevent routing loops by excluding our own app from the VPN tunnel
-        try {
-            builder.addDisallowedApplication(packageName)
-            Log.i(TAG, "Excluded $packageName from VPN tunnel routing loops.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to exclude our own app package: ${e.message}")
+        // Query and allow only web browsers / browsable apps to route through the VPN tunnel.
+        // This ensures messaging (WhatsApp), calling (Zoom), financial, and other non-browser apps
+        // bypass the VPN and HTTP proxy completely, eliminating all cert-pinning or connection failures.
+        val allowedApps = getBrowsersAndBrowsableApps(applicationContext)
+        Log.i(TAG, "Routing only the following apps through VPN tunnel: $allowedApps")
+        for (app in allowedApps) {
+            try {
+                builder.addAllowedApplication(app)
+                Log.i(TAG, "Allowed app in VPN: $app")
+            } catch (e: PackageManager.NameNotFoundException) {
+                Log.w(TAG, "Browsable app $app not installed, skipping.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to allow app $app in VPN: ${e.message}")
+            }
         }
 
         // Configure system-wide HTTP Proxy routing to intercept HTTP/HTTPS traffic (Option C)
