@@ -66,3 +66,8 @@ venv/
 **/.venv/
 scripts/.venv/
 scripts/venv/
+
+# Firebase options containing secrets
+lib/firebase_options.dart
+firebase_options.dart
+
